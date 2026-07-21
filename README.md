@@ -1,40 +1,38 @@
 # Client SSH
 
-Nowy klient SSH, Telnet i SFTP dla Androida, projektowany pod codzienną administrację VPS-ami i tunerami Enigma2. Interfejs jest zoptymalizowany pod mały ekran Samsung Galaxy S20.
+BlackServ Client SSH to lekki klient administracyjny dla Androida przeznaczony do codziennej obsługi VPS-ów i tunerów Enigma2.
 
-## Stan: 0.1.0 — fundament interfejsu
+## Wersja 0.2.2
 
-Pierwszy etap zawiera:
+- prawdziwa sesja SSH z PTY,
+- logowanie hasłem,
+- logowanie kluczem prywatnym przez wklejenie lub wybór pliku,
+- obsługa OpenSSH, PEM, PKCS#8 i PuTTY PPK,
+- `clear`, Ctrl+C, Ctrl+D, Tab, Esc i strzałki,
+- foreground service i keepalive,
+- kopiowanie bufora i zapis logów,
+- aktualizacje z GitHub Releases,
+- stały podpis APK dla kolejnych aktualizacji,
+- ciemny interfejs BlackServ.
 
-- profile SSH i Telnet z dowolnym portem,
-- wybór hasła, klucza prywatnego lub logowania ręcznego,
-- pełnoekranowy terminal z chowanymi belkami,
-- przełączanie zawijania tekstu,
-- klawisze Enter, Ctrl+C, Ctrl+D, Tab, strzałki, Esc, `clear` i `sudo -i`,
-- edytowalne ulubione komendy,
-- kopiowanie całego bufora,
-- zapis logu przez systemowy wybór pliku,
-- szkielety Health i SFTP,
-- foreground service utrzymujący sesję po zablokowaniu telefonu,
-- ikonę zgodną ze starym BlackServ SSH.
+## Aktualizacje
 
-Warstwa sieciowa jest celowo kolejnym etapem. Obecny terminal jest prototypem UI i nie wykonuje jeszcze połączeń.
+Wydania po połączeniu zmian z gałęzią `main` są automatycznie budowane jako podpisany APK i publikowane w GitHub Releases. Aplikacja sprawdza najnowszy Release, pobiera APK i przekazuje go systemowemu instalatorowi Androida.
 
-## Następne kroki
-
-1. transport SSH z PTY, keepalive i prawidłowym zamknięciem kanału,
-2. Telnet z negocjacją opcji i dowolnym portem,
-3. Android Keystore oraz import klucza przez wklejenie lub plik,
-4. trwałe profile i ulubione,
-5. pełny log sesji zapisywany strumieniowo,
-6. SFTP i Health na aktywnym połączeniu.
+Wersje 0.1.0–0.2.1 były podpisywane tymczasowymi kluczami CI. Przejście na 0.2.2 wymaga jednorazowego odinstalowania starej wersji. Od 0.2.2 kolejne APK używają tego samego podpisu i instalują się jako zwykła aktualizacja.
 
 ## Budowanie
 
-Wymagane są JDK 17, Android SDK 36 i Gradle 9.5.0.
+Projekt używa:
 
-```bash
-gradle :app:assembleDebug
-```
+- Android SDK 36,
+- JDK 17,
+- Gradle 9.5.0,
+- Jetpack Compose,
+- mwiede JSch.
 
-Każdy pull request jest automatycznie kompilowany przez GitHub Actions. Poprawny build publikuje na 14 dni artefakt `client-ssh-debug` zawierający debug APK.
+GitHub Actions buduje `:app:assembleDebug`. Workflow wydaniowy buduje `:app:assembleRelease` i publikuje plik `client-ssh-<wersja>.apk`.
+
+## Status
+
+SSH działa. Telnet, pełne SFTP, trwałe profile i Android Keystore są kolejnymi etapami.
