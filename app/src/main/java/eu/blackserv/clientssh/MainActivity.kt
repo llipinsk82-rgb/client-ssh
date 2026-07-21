@@ -19,6 +19,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.service.TerminalSessionService
+import eu.blackserv.clientssh.terminal.PendingSessionRegistry
+import eu.blackserv.clientssh.terminal.TerminalSessionBus
 import eu.blackserv.clientssh.ui.screens.ProfileEditorDialog
 import eu.blackserv.clientssh.ui.screens.ProfilesScreen
 import eu.blackserv.clientssh.ui.screens.SftpScreen
@@ -60,8 +62,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startSessionService(profile: HostProfile) {
+        PendingSessionRegistry.put(profile)
+        TerminalSessionBus.begin(profile)
         val intent = Intent(this, TerminalSessionService::class.java)
-            .putExtra(TerminalSessionService.EXTRA_PROFILE_NAME, profile.name)
+            .putExtra(TerminalSessionService.EXTRA_PROFILE_ID, profile.id)
         ContextCompat.startForegroundService(this, intent)
     }
 
