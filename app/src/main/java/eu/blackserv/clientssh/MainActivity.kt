@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -22,6 +23,7 @@ import eu.blackserv.clientssh.ui.screens.ProfileEditorDialog
 import eu.blackserv.clientssh.ui.screens.ProfilesScreen
 import eu.blackserv.clientssh.ui.screens.SftpScreen
 import eu.blackserv.clientssh.ui.screens.TerminalScreen
+import eu.blackserv.clientssh.ui.screens.UpdateDialog
 import eu.blackserv.clientssh.ui.theme.ClientSshTheme
 
 class MainActivity : ComponentActivity() {
@@ -92,6 +94,7 @@ private fun ClientSshApp(
     onFullscreenChange: (Boolean) -> Unit,
     onSaveLog: (String, String) -> Unit,
 ) {
+    val context = LocalContext.current
     val profiles = remember { mutableStateListOf<HostProfile>() }
     val favorites = remember {
         mutableStateListOf(
@@ -102,6 +105,7 @@ private fun ClientSshApp(
     var destination by remember { mutableStateOf<Destination>(Destination.Profiles) }
     var editedProfile by remember { mutableStateOf<HostProfile?>(null) }
     var showProfileEditor by remember { mutableStateOf(false) }
+    var showUpdater by remember { mutableStateOf(false) }
 
     when (val current = destination) {
         Destination.Profiles -> ProfilesScreen(
@@ -120,6 +124,7 @@ private fun ClientSshApp(
                 destination = Destination.Terminal(it)
             },
             onOpenSftp = { destination = Destination.Sftp(it) },
+            onCheckUpdates = { showUpdater = true },
         )
 
         is Destination.Terminal -> TerminalScreen(
@@ -155,6 +160,10 @@ private fun ClientSshApp(
                 showProfileEditor = false
             },
         )
+    }
+
+    if (showUpdater) {
+        UpdateDialog(context = context, onDismiss = { showUpdater = false })
     }
 }
 
