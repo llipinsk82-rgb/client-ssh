@@ -36,3 +36,5 @@ Wymagane są JDK 17, Android SDK 37 i Gradle 9.5.0.
 ```bash
 gradle :app:assembleDebug
 ```
+
+Każdy pull request jest automatycznie kompilowany przez GitHub Actions.
