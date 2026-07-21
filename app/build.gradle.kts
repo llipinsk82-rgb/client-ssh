@@ -5,6 +5,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val updateKeystoreFile = layout.projectDirectory.file("signing/client-ssh-update.jks").asFile
+
 android {
     namespace = "eu.blackserv.clientssh"
     compileSdk = 36
@@ -13,13 +15,28 @@ android {
         applicationId = "eu.blackserv.clientssh"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.2.2"
+    }
+
+    signingConfigs {
+        create("update") {
+            storeFile = updateKeystoreFile
+            storePassword = "android"
+            keyAlias = "blackserv-update"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
+        debug {
+            if (updateKeystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("update")
+            }
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("update")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
