@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -45,9 +46,19 @@ fun ProfilesScreen(
     onDelete: (HostProfile) -> Unit,
     onConnect: (HostProfile) -> Unit,
     onOpenSftp: (HostProfile) -> Unit,
+    onCheckUpdates: () -> Unit,
 ) {
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Client SSH") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Client SSH") },
+                actions = {
+                    IconButton(onClick = onCheckUpdates) {
+                        Icon(Icons.Default.SystemUpdateAlt, contentDescription = "Sprawdź aktualizacje")
+                    }
+                },
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = onAdd) {
                 Icon(Icons.Default.Add, contentDescription = "Dodaj profil")
