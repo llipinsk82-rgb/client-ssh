@@ -31,10 +31,10 @@ Warstwa sieciowa jest celowo kolejnym etapem. Obecny terminal jest prototypem UI
 
 ## Budowanie
 
-Wymagane są JDK 17, Android SDK 37 i Gradle 9.5.0.
+Wymagane są JDK 17, Android SDK 36 i Gradle 9.5.0.
 
 ```bash
 gradle :app:assembleDebug
 ```
 
-Każdy pull request jest automatycznie kompilowany przez GitHub Actions.
+Każdy pull request jest automatycznie kompilowany przez GitHub Actions. Poprawny build publikuje na 14 dni artefakt `client-ssh-debug` zawierający debug APK.
