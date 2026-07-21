@@ -18,9 +18,15 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses >/dev/null || true
       - name: Install Android SDK 37
-        run: sdkmanager "platforms;android-37" "build-tools;36.0.0"
+        run: sdkmanager --channel=3 "platforms;android-37" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        shell: bash
+        run: |
+          if ! gradle :app:assembleDebug --stacktrace --console=plain > build.log 2>&1; then
+            tail -n 250 build.log
+            exit 1
+          fi
+          tail -n 50 build.log
