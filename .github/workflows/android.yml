@@ -17,10 +17,8 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses >/dev/null || true
-      - name: Install Android Cinnamon Bun platform
-        run: sdkmanager --channel=3 "platforms;android-CinnamonBun"
-      - name: Install Android Build Tools 37
-        run: sdkmanager --channel=3 "build-tools;37.0.0"
+      - name: Install Android SDK 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
