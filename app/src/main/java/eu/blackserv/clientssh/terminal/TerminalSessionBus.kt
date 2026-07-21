@@ -39,6 +39,7 @@ object PendingSessionRegistry {
 
 object TerminalSessionBus {
     private const val MAX_BUFFER_CHARS = 1_000_000
+    private val clearScreenPattern = Regex("(?:\\u001Bc|\\u001B\\[(?:2J|3J))")
 
     private val _snapshot = MutableStateFlow(TerminalSnapshot())
     val snapshot = _snapshot.asStateFlow()
@@ -103,11 +104,17 @@ object TerminalSessionBus {
         if (text.isEmpty()) return
         _snapshot.update { current ->
             val combined = current.output + text
+            val lastClear = clearScreenPattern.findAll(combined).lastOrNull()
+            val afterTerminalClear = if (lastClear != null) {
+                combined.substring(lastClear.range.last + 1)
+            } else {
+                combined
+            }
             current.copy(
-                output = if (combined.length > MAX_BUFFER_CHARS) {
-                    combined.takeLast(MAX_BUFFER_CHARS)
+                output = if (afterTerminalClear.length > MAX_BUFFER_CHARS) {
+                    afterTerminalClear.takeLast(MAX_BUFFER_CHARS)
                 } else {
-                    combined
+                    afterTerminalClear
                 },
             )
         }
