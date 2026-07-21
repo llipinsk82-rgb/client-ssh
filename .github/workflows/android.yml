@@ -19,6 +19,12 @@ jobs:
         run: yes | sdkmanager --licenses >/dev/null || true
       - name: Install Android SDK 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Restore stable update signing key
+        shell: bash
+        run: |
+          mkdir -p app/signing
+          base64 --decode .github/signing/client-ssh-update.jks.b64 > app/signing/client-ssh-update.jks
+          keytool -list -keystore app/signing/client-ssh-update.jks -storepass android -alias blackserv-update >/dev/null
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
