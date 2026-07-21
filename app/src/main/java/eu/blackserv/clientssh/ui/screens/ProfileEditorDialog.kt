@@ -215,18 +215,12 @@ fun ProfileEditorDialog(
                             ) { Text("Wklej") }
 
                             OutlinedButton(
-                                onClick = {
-                                    keyFileLauncher.launch(
-                                        arrayOf(
-                                            "text/plain",
-                                            "application/octet-stream",
-                                            "application/x-pem-file",
-                                        ),
-                                    )
-                                },
+                                onClick = { keyFileLauncher.launch(arrayOf("*/*")) },
                                 modifier = Modifier.weight(1f),
                             ) { Text("Wybierz plik") }
                         }
+
+                        Text("Obsługiwane: OpenSSH, PEM, PKCS#8 i PuTTY PPK.")
 
                         OutlinedTextField(
                             value = privateKey,
@@ -239,7 +233,7 @@ fun ProfileEditorDialog(
                             label = { Text("Klucz prywatny") },
                             minLines = 5,
                             maxLines = 9,
-                            supportingText = { Text("Pełna zawartość razem z BEGIN i END.") },
+                            supportingText = { Text("Wklej pełną zawartość klucza lub wybierz plik.") },
                         )
                         OutlinedTextField(
                             value = privateKeyPassphrase,
