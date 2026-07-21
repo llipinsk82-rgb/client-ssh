@@ -39,7 +39,7 @@ object PendingSessionRegistry {
 
 object TerminalSessionBus {
     private const val MAX_BUFFER_CHARS = 1_000_000
-    private val clearScreenPattern = Regex("(?:\\u001Bc|\\u001B\\[(?:2J|3J))")
+    private val clearScreenPattern = Regex("${27.toChar()}(?:c|\\[(?:2J|3J))")
 
     private val _snapshot = MutableStateFlow(TerminalSnapshot())
     val snapshot = _snapshot.asStateFlow()
