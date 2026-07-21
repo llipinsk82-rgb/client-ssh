@@ -7,11 +7,11 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import eu.blackserv.clientssh.BuildConfig
-import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
+import org.json.JSONObject
 
 data class ReleaseInfo(
     val tag: String,
@@ -41,7 +41,9 @@ class GitHubUpdateManager(private val context: Context) {
                             UpdateCheckResult.Current
                         }
                     },
-                    onFailure = { UpdateCheckResult.Error(it.message ?: "Nie udało się sprawdzić aktualizacji") },
+                    onFailure = {
+                        UpdateCheckResult.Error(it.message ?: "Nie udało się sprawdzić aktualizacji")
+                    },
                 )
             post { onResult(result) }
         }
@@ -95,7 +97,7 @@ class GitHubUpdateManager(private val context: Context) {
             .map { assets.getJSONObject(it) }
             .firstOrNull { asset ->
                 asset.optString("name").endsWith(".apk", ignoreCase = true)
-            } ?: error("Najnowsze wydanie nie zawiera pliku APK")
+            } ?: error("Najnowsze wydanie GitHub nie zawiera pliku APK.")
 
         val tag = json.getString("tag_name")
         return ReleaseInfo(
@@ -111,22 +113,32 @@ class GitHubUpdateManager(private val context: Context) {
         openConnection(url).inputStream.use { input ->
             target.outputStream().buffered().use { output -> input.copyTo(output) }
         }
-        require(target.length() > 0L) { "Pobrany plik APK jest pusty" }
+        require(target.length() > 0L) { "Pobrany plik APK jest pusty." }
     }
 
-    private fun openConnection(url: String): HttpURLConnection =
-        (URL(url).openConnection() as HttpURLConnection).apply {
+    private fun openConnection(url: String): HttpURLConnection {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.apply {
             connectTimeout = 15_000
             readTimeout = 60_000
             instanceFollowRedirects = true
             setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
+            setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
             setRequestProperty("User-Agent", "Client-SSH/${BuildConfig.VERSION_NAME}")
-            if (responseCode !in 200..299) {
-                val errorBody = errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                error("GitHub zwrócił błąd HTTP $responseCode${if (errorBody.isBlank()) "" else ": $errorBody"}")
-            }
         }
+
+        val status = connection.responseCode
+        if (status !in 200..299) {
+            val message = when (status) {
+                404 -> "Na GitHub nie ma jeszcze opublikowanego wydania Client SSH."
+                403 -> "GitHub zablokował chwilowo sprawdzanie aktualizacji. Spróbuj później."
+                else -> "GitHub zwrócił błąd HTTP $status."
+            }
+            connection.disconnect()
+            error(message)
+        }
+        return connection
+    }
 
     private fun isNewer(remote: String, local: String): Boolean {
         val remoteParts = versionParts(remote)
