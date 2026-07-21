@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
@@ -16,6 +19,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import eu.blackserv.clientssh.model.AuthenticationMethod
 import eu.blackserv.clientssh.model.ConnectionProtocol
@@ -36,12 +41,30 @@ fun ProfileEditorDialog(
     var authentication by remember {
         mutableStateOf(existing?.authenticationMethod ?: AuthenticationMethod.PASSWORD)
     }
+    var password by remember { mutableStateOf(existing?.password.orEmpty()) }
+    var privateKey by remember { mutableStateOf(existing?.privateKey.orEmpty()) }
+    var privateKeyPassphrase by remember { mutableStateOf(existing?.privateKeyPassphrase.orEmpty()) }
+
+    val portNumber = port.toIntOrNull()
+    val credentialsValid = when (authentication) {
+        AuthenticationMethod.PASSWORD -> password.isNotBlank()
+        AuthenticationMethod.PRIVATE_KEY -> privateKey.isNotBlank()
+        AuthenticationMethod.INTERACTIVE -> true
+    }
+    val formValid = name.isNotBlank() &&
+        host.isNotBlank() &&
+        portNumber?.let { it in 1..65535 } == true &&
+        (protocol != ConnectionProtocol.SSH || username.isNotBlank()) &&
+        credentialsValid
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "Nowy profil" else "Edytuj profil") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ConnectionProtocol.entries.forEach { option ->
                         FilterChip(
@@ -58,12 +81,21 @@ fun ProfileEditorDialog(
                         )
                     }
                 }
+
                 OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Nazwa") }, singleLine = true)
                 OutlinedTextField(host, { host = it.trim() }, Modifier.fillMaxWidth(), label = { Text("Host lub IP") }, singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(username, { username = it }, Modifier.weight(1f), label = { Text("Użytkownik") }, singleLine = true)
-                    OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, Modifier.weight(.65f), label = { Text("Port") }, singleLine = true)
+                    OutlinedTextField(
+                        value = port,
+                        onValueChange = { port = it.filter(Char::isDigit).take(5) },
+                        modifier = Modifier.weight(.65f),
+                        label = { Text("Port") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
                 }
+
                 Text("Logowanie")
                 AuthenticationMethod.entries
                     .filter { protocol == ConnectionProtocol.SSH || it != AuthenticationMethod.PRIVATE_KEY }
@@ -75,12 +107,43 @@ fun ProfileEditorDialog(
                             modifier = Modifier.padding(end = 6.dp),
                         )
                     }
-                Text("Hasła i klucze będą przechowywane osobno w Android Keystore; profil nie przechowuje sekretów.")
+
+                when (authentication) {
+                    AuthenticationMethod.PASSWORD -> OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Hasło") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                    )
+                    AuthenticationMethod.PRIVATE_KEY -> {
+                        OutlinedTextField(
+                            value = privateKey,
+                            onValueChange = { privateKey = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Klucz prywatny") },
+                            minLines = 5,
+                            maxLines = 9,
+                        )
+                        OutlinedTextField(
+                            value = privateKeyPassphrase,
+                            onValueChange = { privateKeyPassphrase = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Hasło klucza — opcjonalne") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                        )
+                    }
+                    AuthenticationMethod.INTERACTIVE -> Text("Dane logowania wpiszesz w terminalu.")
+                }
+
+                Text("Dane logowania w tej wersji pozostają tylko w pamięci aplikacji.")
             }
         },
         confirmButton = {
             TextButton(
-                enabled = name.isNotBlank() && host.isNotBlank() && port.toIntOrNull()?.let { it in 1..65535 } == true,
+                enabled = formValid,
                 onClick = {
                     onSave(
                         HostProfile(
@@ -91,6 +154,9 @@ fun ProfileEditorDialog(
                             username = username.trim(),
                             protocol = protocol,
                             authenticationMethod = authentication,
+                            password = if (authentication == AuthenticationMethod.PASSWORD) password else "",
+                            privateKey = if (authentication == AuthenticationMethod.PRIVATE_KEY) privateKey.trim() else "",
+                            privateKeyPassphrase = if (authentication == AuthenticationMethod.PRIVATE_KEY) privateKeyPassphrase else "",
                         ),
                     )
                 },
