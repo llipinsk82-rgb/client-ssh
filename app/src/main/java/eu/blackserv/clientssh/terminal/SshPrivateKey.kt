@@ -11,8 +11,12 @@ fun String.normalizePrivateKeyText(): String =
 
 fun validatePrivateKeyMaterial(keyText: String, passphrase: String): String? {
     val normalized = keyText.normalizePrivateKeyText()
-    if (!normalized.contains("PRIVATE KEY")) {
-        return "Plik nie wygląda jak klucz prywatny SSH."
+    val firstLine = normalized.lineSequence().firstOrNull().orEmpty()
+    val looksLikePutty = firstLine.startsWith("PuTTY-User-Key-File-", ignoreCase = true)
+    val looksLikePemOrOpenSsh = normalized.contains("PRIVATE KEY")
+
+    if (!looksLikePutty && !looksLikePemOrOpenSsh) {
+        return "Plik nie wygląda jak prywatny klucz SSH, OpenSSH ani PuTTY PPK."
     }
 
     return runCatching {
@@ -27,8 +31,11 @@ fun validatePrivateKeyMaterial(keyText: String, passphrase: String): String? {
     }.exceptionOrNull()?.let { error ->
         val message = error.message.orEmpty()
         when {
-            message.contains("passphrase", ignoreCase = true) -> "Nieprawidłowe hasło klucza prywatnego."
-            message.contains("invalid privatekey", ignoreCase = true) -> "Nieobsługiwany albo uszkodzony klucz prywatny."
+            message.contains("passphrase", ignoreCase = true) ||
+                message.contains("MAC Error", ignoreCase = true) ->
+                "Nieprawidłowe hasło klucza prywatnego albo uszkodzony plik PPK."
+            message.contains("invalid privatekey", ignoreCase = true) ->
+                "Nieobsługiwany albo uszkodzony klucz prywatny."
             else -> message.ifBlank { "Nie udało się odczytać klucza prywatnego." }
         }
     }
