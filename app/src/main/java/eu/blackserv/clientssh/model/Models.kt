@@ -21,6 +21,9 @@ data class HostProfile(
     val username: String,
     val protocol: ConnectionProtocol,
     val authenticationMethod: AuthenticationMethod,
+    val password: String = "",
+    val privateKey: String = "",
+    val privateKeyPassphrase: String = "",
 )
 
 data class FavoriteCommand(
