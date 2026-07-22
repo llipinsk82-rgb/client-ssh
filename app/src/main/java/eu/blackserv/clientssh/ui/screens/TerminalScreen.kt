@@ -1,6 +1,7 @@
 package eu.blackserv.clientssh.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,10 +49,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.model.TerminalSettings
@@ -93,6 +96,7 @@ fun TerminalScreen(
     val session by TerminalSessionBus.snapshot.collectAsState()
     var fullscreen by remember { mutableStateOf(false) }
     var wrapMode by remember { mutableStateOf(TextWrapMode.WRAP) }
+    var terminalFontSize by remember { mutableStateOf(13.sp) }
     var command by remember { mutableStateOf("") }
     var showFavorites by remember { mutableStateOf(false) }
     var showHealth by remember { mutableStateOf(false) }
@@ -218,6 +222,11 @@ fun TerminalScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, _, zoom, _ ->
+                            terminalFontSize = (terminalFontSize.value * zoom).coerceIn(9f, 22f).sp
+                        }
+                    }
                     .verticalScroll(verticalScroll)
                     .then(
                         if (wrapMode == TextWrapMode.NO_WRAP) Modifier.horizontalScroll(horizontalScroll)
@@ -229,6 +238,7 @@ fun TerminalScreen(
                     Text(
                         text = annotatedOutput,
                         fontFamily = FontFamily.Monospace,
+                        fontSize = terminalFontSize,
                         softWrap = wrapMode == TextWrapMode.WRAP,
                     )
                 }
