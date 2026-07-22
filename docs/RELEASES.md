@@ -1,5 +1,15 @@
 # Historia wydań Client SSH
 
+## 0.3.1
+
+Cel: drugi, właściwy pass wyglądu po uwadze, że 0.3.0 zmieniło głównie kolory, a nie dało jeszcze efektu premium.
+
+- Hosty dostały warstwowe panele z cienkim highlightem, cieniem i bocznym akcentem.
+- Przyciski są bardziej techniczne: mniej plastikowego Material, więcej obramowań i klasowego minimalizmu.
+- SFTP dostał mocniejszy styl commander/premium: cienie, linie, ramki, akcent folder/plik.
+- Globalne kształty i paleta zostały dopasowane do graphite / terminal green / amber.
+- Transport SSH/SFTP nie był zmieniany — to wydanie jest warstwą UI/UX.
+
 ## 0.3.0
 
 Cel: dopracowanie wyglądu i ergonomii po wdrożeniu realnego SFTP.

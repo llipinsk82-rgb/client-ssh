@@ -46,14 +46,12 @@ jobs:
           cat > release-notes.md <<EOF
           Client SSH $VERSION
 
-          - odświeżony wygląd BlackServ: graphite / terminal green / subtelne akcenty bez niebieskich przycisków,
-          - ekran główny pokazuje wersję aplikacji od razu po starcie,
-          - lista hostów ma bardziej profesjonalny, zwarty wygląd,
-          - SFTP dostał kompaktowy widok w stylu Total Commander: cienkie wiersze zamiast dużych bloków,
-          - akcje SFTP są przeniesione do menu przy pozycji: otwórz/pobierz, zmień nazwę, usuń,
-          - pasek SFTP pokazuje ścieżkę, status i szybkie akcje: wyżej, odśwież, upload, nowy katalog,
-          - terminal obsługuje pinch-to-zoom dwoma palcami dla rozmiaru czcionki,
-          - dodano dokumentację stanu projektu i historię wydań do kontynuacji w nowym czacie.
+          - premium pass wyglądu BlackServ: warstwy, cienie, cienkie linie i obramowania,
+          - ekran hostów dostał głębię paneli, akcent boczny, bardziej techniczne przyciski i mniej plastikowy Material,
+          - SFTP dostał mocniejszy styl commander: linie, warstwy, cienie, akcent folder/plik,
+          - globalne kształty i paleta dopasowane do graphite / terminal green / amber,
+          - nie ruszano transportu SSH/SFTP, to jest warstwa UI/UX,
+          - dokumentacja projektu i historia wydań zaktualizowane.
           EOF
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
