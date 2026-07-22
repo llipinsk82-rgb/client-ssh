@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.blackserv.clientssh.BuildConfig
 import eu.blackserv.clientssh.update.GitHubUpdateManager
+import eu.blackserv.clientssh.update.InstallLaunchResult
 import eu.blackserv.clientssh.update.ReleaseInfo
 import eu.blackserv.clientssh.update.UpdateCheckResult
 import java.io.File
@@ -32,6 +33,7 @@ private sealed interface UpdateUiState {
     data class Available(val release: ReleaseInfo) : UpdateUiState
     data class Downloading(val release: ReleaseInfo) : UpdateUiState
     data class Ready(val release: ReleaseInfo, val apk: File) : UpdateUiState
+    data class Info(val message: String) : UpdateUiState
     data class Error(val message: String) : UpdateUiState
 }
 
@@ -55,7 +57,7 @@ fun UpdateDialog(context: Context, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Aktualizacje") },
+        title = { Text("Aktualizacje OTA") },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text("Zainstalowana wersja: ${BuildConfig.VERSION_NAME}")
@@ -66,25 +68,21 @@ fun UpdateDialog(context: Context, onDismiss: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         Text("Sprawdzanie GitHub Releases…")
                     }
-                    UpdateUiState.Current -> Text("Masz najnowszą wersję aplikacji.")
-                    is UpdateUiState.Available -> {
-                        Text("Dostępna wersja: ${current.release.version}")
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            current.release.notes,
-                            modifier = Modifier.height(220.dp).verticalScroll(rememberScrollState()),
-                        )
-                    }
+                    UpdateUiState.Current -> Text("Masz najnowszą opublikowaną wersję aplikacji.")
+                    is UpdateUiState.Available -> ReleaseDetails(current.release)
                     is UpdateUiState.Downloading -> {
                         CircularProgressIndicator()
                         Spacer(Modifier.height(8.dp))
                         Text("Pobieranie ${current.release.apkName}…")
                     }
                     is UpdateUiState.Ready -> {
-                        Text("APK zostało pobrane. Naciśnij Instaluj.")
+                        Text("APK zostało pobrane i zweryfikowane. Naciśnij Instaluj.")
                         Spacer(Modifier.height(8.dp))
-                        Text("Przy pierwszej aktualizacji Android może poprosić o zgodę na instalowanie z tej aplikacji.")
+                        current.release.apkSha256?.let { Text("SHA-256: $it") }
+                        Spacer(Modifier.height(8.dp))
+                        Text("Przy pierwszej aktualizacji Android może poprosić o zgodę na instalowanie z Client SSH.")
                     }
+                    is UpdateUiState.Info -> Text(current.message)
                     is UpdateUiState.Error -> Text(current.message)
                 }
             }
@@ -101,14 +99,36 @@ fun UpdateDialog(context: Context, onDismiss: () -> Unit) {
                     }
                 }) { Text("Pobierz") }
                 is UpdateUiState.Ready -> Button(onClick = {
-                    manager.install(current.apk)
+                    state = when (val result = manager.install(current.apk)) {
+                        InstallLaunchResult.Started -> UpdateUiState.Info("Instalator Androida został uruchomiony.")
+                        InstallLaunchResult.PermissionRequired -> UpdateUiState.Info(
+                            "Android wymaga zgody na instalowanie z tej aplikacji. Włącz zgodę, wróć do Client SSH i kliknij aktualizację ponownie.",
+                        )
+                        is InstallLaunchResult.Error -> UpdateUiState.Error(result.message)
+                    }
                 }) { Text("Instaluj") }
-                is UpdateUiState.Error, UpdateUiState.Current -> Button(onClick = { check() }) {
+                is UpdateUiState.Error, UpdateUiState.Current, is UpdateUiState.Info -> Button(onClick = { check() }) {
                     Text("Sprawdź ponownie")
                 }
                 else -> Unit
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Zamknij") } },
+    )
+}
+
+@Composable
+private fun ReleaseDetails(release: ReleaseInfo) {
+    Text("Dostępna wersja: ${release.version}")
+    Spacer(Modifier.height(6.dp))
+    Text("Plik: ${release.apkName}")
+    release.apkSha256?.let {
+        Spacer(Modifier.height(6.dp))
+        Text("SHA-256: $it")
+    }
+    Spacer(Modifier.height(8.dp))
+    Text(
+        release.notes,
+        modifier = Modifier.height(220.dp).verticalScroll(rememberScrollState()),
     )
 }
