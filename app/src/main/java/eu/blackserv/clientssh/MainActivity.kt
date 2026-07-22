@@ -21,12 +21,15 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -35,25 +38,32 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import eu.blackserv.clientssh.model.AppSettings
+import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.service.TerminalSessionService
 import eu.blackserv.clientssh.storage.LocalAppStore
 import eu.blackserv.clientssh.terminal.PendingSessionRegistry
+import eu.blackserv.clientssh.terminal.TerminalConnectionState
 import eu.blackserv.clientssh.terminal.TerminalSessionBus
 import eu.blackserv.clientssh.ui.screens.HistoryScreen
 import eu.blackserv.clientssh.ui.screens.ProfileEditorDialog
 import eu.blackserv.clientssh.ui.screens.ProfilesScreen
 import eu.blackserv.clientssh.ui.screens.SettingsScreen
 import eu.blackserv.clientssh.ui.screens.SftpScreen
+import eu.blackserv.clientssh.ui.screens.StartupScreen
 import eu.blackserv.clientssh.ui.screens.TerminalScreen
 import eu.blackserv.clientssh.ui.screens.UpdateDialog
+import eu.blackserv.clientssh.ui.theme.AppBackdrop
 import eu.blackserv.clientssh.ui.theme.ClientSshTheme
+import eu.blackserv.clientssh.ui.theme.LocalAppSkin
 import java.util.UUID
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
     private var pendingLogContent: String = ""
+    private val openActiveTerminalRequest = MutableStateFlow(0L)
 
     private val saveLogLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain"),
@@ -70,6 +80,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
+        val openedFromSessionNotification = intent?.action == ACTION_OPEN_ACTIVE_TERMINAL
+        if (openedFromSessionNotification) requestOpenActiveTerminal()
+
         setContent {
             val context = LocalContext.current
             val appStore = remember(context.applicationContext) {
@@ -78,29 +91,48 @@ class MainActivity : ComponentActivity() {
             var appSettings by remember(appStore) {
                 mutableStateOf(appStore.loadAppSettings())
             }
+            var showStartup by remember {
+                mutableStateOf(savedInstanceState == null && !openedFromSessionNotification)
+            }
+            val openRequest by openActiveTerminalRequest.collectAsState()
 
-            ClientSshTheme(
-                skin = appSettings.skin,
-                darkTheme = true,
-            ) {
-                ClientSshApp(
-                    appStore = appStore,
-                    appSettings = appSettings,
-                    onAppSettingsChange = { updated ->
-                        appSettings = updated
-                        appStore.saveAppSettings(updated)
-                    },
-                    onSessionStarted = ::startSessionService,
-                    onSessionStopped = ::stopSessionService,
-                    onFullscreenChange = ::setFullscreen,
-                    onKeepScreenAwakeChange = ::setKeepScreenAwake,
-                    onSaveLog = { filename, content ->
-                        pendingLogContent = content
-                        saveLogLauncher.launch(filename.sanitizeFilename())
-                    },
-                )
+            if (showStartup) {
+                StartupScreen(onFinished = { showStartup = false })
+            } else {
+                ClientSshTheme(
+                    skin = appSettings.skin,
+                    darkTheme = true,
+                ) {
+                    ClientSshApp(
+                        appStore = appStore,
+                        appSettings = appSettings,
+                        openActiveTerminalRequest = openRequest,
+                        onAppSettingsChange = { updated ->
+                            appSettings = updated
+                            appStore.saveAppSettings(updated)
+                        },
+                        onSessionStarted = ::startSessionService,
+                        onSessionStopped = ::stopSessionService,
+                        onFullscreenChange = ::setFullscreen,
+                        onKeepScreenAwakeChange = ::setKeepScreenAwake,
+                        onSaveLog = { filename, content ->
+                            pendingLogContent = content
+                            saveLogLauncher.launch(filename.sanitizeFilename())
+                        },
+                    )
+                }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == ACTION_OPEN_ACTIVE_TERMINAL) requestOpenActiveTerminal()
+    }
+
+    private fun requestOpenActiveTerminal() {
+        openActiveTerminalRequest.value = System.nanoTime()
     }
 
     private fun startSessionService(profile: HostProfile) {
@@ -157,6 +189,7 @@ private data class MainNavItem(
 private fun ClientSshApp(
     appStore: LocalAppStore,
     appSettings: AppSettings,
+    openActiveTerminalRequest: Long,
     onAppSettingsChange: (AppSettings) -> Unit,
     onSessionStarted: (HostProfile) -> Unit,
     onSessionStopped: () -> Unit,
@@ -171,6 +204,7 @@ private fun ClientSshApp(
     val favorites = remember(appStore) {
         mutableStateListOf<FavoriteCommand>().also { it.addAll(appStore.loadFavorites()) }
     }
+    val session by TerminalSessionBus.snapshot.collectAsState()
     var terminalSettings by remember(appStore) {
         mutableStateOf(appStore.loadTerminalSettings())
     }
@@ -178,6 +212,21 @@ private fun ClientSshApp(
     var editedProfile by remember { mutableStateOf<HostProfile?>(null) }
     var showProfileEditor by remember { mutableStateOf(false) }
     var showUpdater by remember { mutableStateOf(false) }
+
+    val sessionIsActive = session.state == TerminalConnectionState.CONNECTING ||
+        session.state == TerminalConnectionState.CONNECTED
+    val activeProfile = profiles.firstOrNull { it.id == session.profileId }
+
+    LaunchedEffect(
+        openActiveTerminalRequest,
+        session.profileId,
+        session.state,
+        profiles.size,
+    ) {
+        if (openActiveTerminalRequest != 0L && sessionIsActive && activeProfile != null) {
+            destination = Destination.Terminal(activeProfile)
+        }
+    }
 
     fun saveProfiles() = appStore.saveProfiles(profiles)
     fun saveFavorites() = appStore.saveFavorites(favorites)
@@ -203,6 +252,8 @@ private fun ClientSshApp(
         ) {
             ProfilesScreen(
                 profiles = profiles,
+                activeProfileId = session.profileId.takeIf { sessionIsActive },
+                activeSessionStatus = session.statusText,
                 onAdd = {
                     editedProfile = null
                     showProfileEditor = true
@@ -222,10 +273,15 @@ private fun ClientSshApp(
                     profiles.remove(it)
                     saveProfiles()
                 },
-                onConnect = {
-                    onSessionStarted(it)
-                    destination = Destination.Terminal(it)
+                onConnect = { profile ->
+                    if (sessionIsActive && session.profileId == profile.id) {
+                        destination = Destination.Terminal(profile)
+                    } else {
+                        onSessionStarted(profile)
+                        destination = Destination.Terminal(profile)
+                    }
                 },
+                onDisconnectActiveSession = onSessionStopped,
                 onOpenSftp = { destination = Destination.Sftp(it) },
                 onCheckUpdates = { showUpdater = true },
             )
@@ -307,21 +363,23 @@ private fun MainShell(
     onSelect: (Destination) -> Unit,
     content: @Composable () -> Unit,
 ) {
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            MainNavigationBar(
-                current = current,
-                onSelect = onSelect,
-            )
-        },
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            content()
+    AppBackdrop {
+        Scaffold(
+            containerColor = Color.Transparent,
+            bottomBar = {
+                MainNavigationBar(
+                    current = current,
+                    onSelect = onSelect,
+                )
+            },
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            ) {
+                content()
+            }
         }
     }
 }
@@ -331,6 +389,7 @@ private fun MainNavigationBar(
     current: Destination,
     onSelect: (Destination) -> Unit,
 ) {
+    val skin = LocalAppSkin.current
     val items = listOf(
         MainNavItem(Destination.Profiles, "Serwery", Icons.Default.Storage),
         MainNavItem(Destination.History, "Historia", Icons.Default.History),
@@ -338,8 +397,10 @@ private fun MainNavigationBar(
     )
 
     NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = 0.dp,
+        containerColor = MaterialTheme.colorScheme.surface.copy(
+            alpha = if (skin == AppSkin.NEON) 0.94f else 1f,
+        ),
+        tonalElevation = if (skin == AppSkin.NEON) 10.dp else 0.dp,
     ) {
         items.forEach { item ->
             val selected = current == item.destination
@@ -354,9 +415,17 @@ private fun MainNavigationBar(
                 },
                 label = { Text(item.label) },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedIconColor = if (skin == AppSkin.NEON) {
+                        MaterialTheme.colorScheme.tertiary
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
                     selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    indicatorColor = if (skin == AppSkin.NEON) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                    } else {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    },
                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
