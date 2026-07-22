@@ -2,7 +2,7 @@
 
 BlackServ Client SSH to lekki klient administracyjny dla Androida przeznaczony do codziennej obsługi VPS-ów i tunerów Enigma2.
 
-## Wersja 0.2.7
+## Wersja 0.2.8
 
 - prawdziwa sesja SSH z PTY,
 - logowanie hasłem,
@@ -16,24 +16,25 @@ BlackServ Client SSH to lekki klient administracyjny dla Androida przeznaczony d
 - gotowe komendy `clear` i `sudo -i` są edytowalnymi ulubionymi komendami,
 - odchudzone ulubione komendy: bez `Wstaw` i `Uruchom`,
 - widoczny przycisk `Usuń` dla ulubionych komend,
-- przełącznik niewygaszania ekranu przeniesiony do paska statusu hosta po prawej stronie,
+- przełącznik niewygaszania ekranu w pasku statusu hosta,
 - dodane klonowanie profilu hosta do szybkiej zmiany portu/nazwy,
-- górna belka dopasowana do małych ekranów,
 - poprawione `clear` i usuwanie fałszywego promptu z sekwencji OSC,
 - kolorowy terminal z podstawową obsługą ANSI,
 - Ctrl+C, Ctrl+D, Tab, Esc i strzałki,
 - `Ctrl+D` / `exit` zamyka ekran terminala po zakończeniu powłoki,
 - foreground service i keepalive,
 - kopiowanie bufora i zapis logów,
-- aktualizacje OTA z GitHub Releases,
+- OTA z GitHub Releases z wyborem najnowszej wersji nowszej od lokalnej,
+- weryfikacja pobranego APK przez SHA-256 z assetu release,
+- czytelniejsze komunikaty OTA i obsługa zgody Androida na instalację,
 - stały podpis APK dla kolejnych aktualizacji,
 - ciemny interfejs BlackServ.
 
 ## Nadal do wykonania
 
-- realny Health Monitor,
-- realny SFTP.
+- realny SFTP,
+- realny Health Monitor.
 
 ## Aktualizacje
 
-Wydania po połączeniu zmian z gałęzią `main` są automatycznie budowane jako podpisany APK i publikowane w GitHub Releases. Aplikacja sprawdza najnowszy Release, pobiera APK i przekazuje go systemowemu instalatorowi Androida.
+Wydania po połączeniu zmian z gałęzią `main` są automatycznie budowane jako podpisany APK i publikowane w GitHub Releases. Aplikacja pobiera listę wydań, wybiera najnowsze wydanie nowsze od zainstalowanej wersji, pobiera podpisany APK, sprawdza SHA-256 i przekazuje plik systemowemu instalatorowi Androida.

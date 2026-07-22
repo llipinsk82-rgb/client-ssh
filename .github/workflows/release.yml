@@ -46,12 +46,11 @@ jobs:
           cat > release-notes.md <<EOF
           Client SSH $VERSION
 
-          - odchudzone okno ulubionych: usunięto akcje Wstaw i Uruchom,
-          - przełącznik niewygaszania ekranu przeniesiony do paska statusu po prawej stronie adresu hosta,
-          - usunięto przycisk EKRAN ON/OFF z dolnego paska skrótów,
-          - dodano klonowanie profilu hosta z ekranu listy profili,
-          - klon otwiera edytor, więc można szybko zmienić tylko port albo nazwę,
-          - SFTP i Health Monitor nadal są etapem kolejnym.
+          - OTA pobiera listę GitHub Releases i wybiera najnowsze wydanie nowsze od zainstalowanej wersji,
+          - OTA preferuje podpisany plik release APK zamiast debug APK,
+          - pobrany APK jest weryfikowany sumą SHA-256 z assetu release,
+          - komunikaty OTA są czytelniejsze: brak release, brak uprawnień instalacji, błąd pobierania albo instalator uruchomiony,
+          - instalator Androida uruchamiany jest dopiero po pobraniu i sprawdzeniu pliku.
           EOF
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
