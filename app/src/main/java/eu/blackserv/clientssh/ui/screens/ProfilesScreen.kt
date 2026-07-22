@@ -1,6 +1,5 @@
 package eu.blackserv.clientssh.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,11 +9,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.item
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,11 +22,14 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -52,13 +53,11 @@ import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.HostProfile
 
 private val ScreenBackground = Color(0xFF050A08)
-private val ScreenVignette = Color(0xFF0B1511)
-private val PanelColor = Color(0xFF101A16)
-private val PanelDeep = Color(0xFF0B120F)
-private val PanelStroke = Color(0xFF2F4339)
-private val PanelHighlight = Color(0xFF526A5C)
+private val PanelColor = Color(0xFF0D1713)
+private val PanelColorDeep = Color(0xFF08110E)
+private val PanelStroke = Color(0xFF2C4437)
 private val AccentGreen = Color(0xFF62D58A)
-private val AccentAmber = Color(0xFFD9A441)
+private val AccentAmber = Color(0xFFE0B35A)
 private val MutedText = Color(0xFFA7B5AD)
 private val DangerRed = Color(0xFFE88989)
 
@@ -66,6 +65,10 @@ private val DangerRed = Color(0xFFE88989)
 @Composable
 fun ProfilesScreen(
     profiles: List<HostProfile>,
+    activeSessionName: String?,
+    activeSessionStatus: String?,
+    onResumeActiveSession: (() -> Unit)?,
+    onDisconnectActiveSession: () -> Unit,
     onAdd: () -> Unit,
     onEdit: (HostProfile) -> Unit,
     onClone: (HostProfile) -> Unit,
@@ -110,36 +113,64 @@ fun ProfilesScreen(
             }
         },
     ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(ScreenBackground),
-        ) {
+        if (profiles.isEmpty() && activeSessionName == null) {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(110.dp)
-                    .background(ScreenVignette),
-            )
-            if (profiles.isEmpty()) {
-                EmptyProfilesPanel(onAdd = onAdd)
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(
+                    color = PanelColor,
+                    shape = RoundedCornerShape(18.dp),
+                    tonalElevation = 8.dp,
+                    shadowElevation = 12.dp,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, PanelStroke),
                 ) {
-                    items(profiles, key = { it.id }) { profile ->
-                        HostProfileRow(
-                            profile = profile,
-                            onConnect = onConnect,
-                            onOpenSftp = onOpenSftp,
-                            onClone = onClone,
-                            onEdit = onEdit,
-                            onDelete = onDelete,
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Default.Computer, contentDescription = null, tint = AccentGreen)
+                        Text("Brak profili", fontWeight = FontWeight.Bold)
+                        Text("Dodaj VPS lub tuner Enigma2 przez SSH albo Telnet.", color = MutedText)
+                        Button(
+                            onClick = onAdd,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AccentGreen,
+                                contentColor = Color(0xFF06120B),
+                            ),
+                            modifier = Modifier.padding(top = 10.dp),
+                        ) {
+                            Text("Dodaj pierwszy profil")
+                        }
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding).background(ScreenBackground),
+                contentPadding = PaddingValues(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (activeSessionName != null) {
+                    item {
+                        ActiveSessionCard(
+                            name = activeSessionName,
+                            status = activeSessionStatus.orEmpty(),
+                            onResume = onResumeActiveSession,
+                            onDisconnect = onDisconnectActiveSession,
                         )
                     }
+                }
+                items(profiles, key = { it.id }) { profile ->
+                    HostProfileRow(
+                        profile = profile,
+                        onConnect = onConnect,
+                        onOpenSftp = onOpenSftp,
+                        onClone = onClone,
+                        onEdit = onEdit,
+                        onDelete = onDelete,
+                    )
                 }
             }
         }
@@ -147,36 +178,51 @@ fun ProfilesScreen(
 }
 
 @Composable
-private fun EmptyProfilesPanel(onAdd: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        contentAlignment = Alignment.Center,
+private fun ActiveSessionCard(
+    name: String,
+    status: String,
+    onResume: (() -> Unit)?,
+    onDisconnect: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = PanelColorDeep,
+        shape = RoundedCornerShape(16.dp),
+        tonalElevation = 8.dp,
+        shadowElevation = 14.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, AccentGreen.copy(alpha = 0.55f)),
     ) {
-        Surface(
-            color = PanelColor,
-            shape = RoundedCornerShape(22.dp),
-            tonalElevation = 4.dp,
-            shadowElevation = 12.dp,
-            border = BorderStroke(1.dp, PanelStroke),
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(9.dp),
-            ) {
-                Icon(Icons.Default.Computer, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(34.dp))
-                Text("Brak profili", fontWeight = FontWeight.Bold, color = Color(0xFFE6F0EA))
-                Text("Dodaj VPS lub tuner Enigma2 przez SSH albo Telnet.", color = MutedText)
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("●", color = AccentGreen)
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Sesja działa w tle", color = AccentGreen, fontWeight = FontWeight.Bold)
+                    Text("$name • $status", color = MutedText, fontFamily = FontFamily.Monospace)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(
-                    onClick = onAdd,
+                    enabled = onResume != null,
+                    onClick = { onResume?.invoke() },
+                    modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = AccentGreen,
                         contentColor = Color(0xFF06120B),
                     ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.padding(top = 10.dp),
+                    shape = RoundedCornerShape(10.dp),
                 ) {
-                    Text("Dodaj pierwszy profil")
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Wróć")
+                }
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = DangerRed)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Rozłącz", color = DangerRed)
                 }
             }
         }
@@ -192,44 +238,17 @@ private fun HostProfileRow(
     onEdit: (HostProfile) -> Unit,
     onDelete: (HostProfile) -> Unit,
 ) {
-    Surface(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        color = PanelColor,
-        contentColor = Color(0xFFE6F0EA),
-        shape = RoundedCornerShape(18.dp),
-        tonalElevation = 3.dp,
-        shadowElevation = 9.dp,
-        border = BorderStroke(1.dp, PanelStroke),
+        colors = CardDefaults.cardColors(containerColor = PanelColor),
+        border = androidx.compose.foundation.BorderStroke(1.dp, PanelStroke),
+        shape = RoundedCornerShape(14.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {
-        Column {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(PanelHighlight.copy(alpha = 0.55f)))
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(3.dp)
-                        .height(48.dp)
-                        .background(
-                            if (profile.protocol == ConnectionProtocol.SSH) AccentGreen else AccentAmber,
-                            RoundedCornerShape(8.dp),
-                        ),
-                )
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(profile.name, fontWeight = FontWeight.Bold, color = Color(0xFFE6F0EA))
-                        AssistChip(
-                            onClick = {},
-                            label = { Text(profile.protocol.label) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = PanelDeep,
-                                labelColor = if (profile.protocol == ConnectionProtocol.SSH) AccentGreen else AccentAmber,
-                            ),
-                            border = BorderStroke(1.dp, PanelStroke),
-                        )
-                    }
+                    Text(profile.name, fontWeight = FontWeight.Bold, color = Color(0xFFE6F0EA))
                     Text(
                         "${profile.username.ifBlank { "—" }}@${profile.host}:${profile.port}",
                         color = MutedText,
@@ -237,6 +256,7 @@ private fun HostProfileRow(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
+                AssistChip(onClick = {}, label = { Text(profile.protocol.label) })
                 IconButton(onClick = { onClone(profile) }) {
                     Icon(Icons.Default.ContentCopy, contentDescription = "Klonuj", tint = MutedText)
                 }
@@ -247,32 +267,25 @@ private fun HostProfileRow(
                     Icon(Icons.Default.Delete, contentDescription = "Usuń", tint = DangerRed)
                 }
             }
-            Box(Modifier.fillMaxWidth().height(1.dp).padding(horizontal = 12.dp).background(PanelStroke.copy(alpha = 0.65f)))
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedButton(
+                Button(
                     onClick = { onConnect(profile) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color(0xFF0B1711),
-                        contentColor = AccentGreen,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AccentGreen,
+                        contentColor = Color(0xFF06120B),
                     ),
-                    border = BorderStroke(1.dp, AccentGreen.copy(alpha = 0.75f)),
-                    shape = RoundedCornerShape(11.dp),
+                    shape = RoundedCornerShape(10.dp),
                 ) {
-                    Text("Terminal", fontWeight = FontWeight.SemiBold)
+                    Text("Terminal")
                 }
                 if (profile.protocol == ConnectionProtocol.SSH) {
                     OutlinedButton(
                         onClick = { onOpenSftp(profile) },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = PanelDeep,
-                            contentColor = MutedText,
-                        ),
-                        border = BorderStroke(1.dp, PanelStroke),
-                        shape = RoundedCornerShape(11.dp),
+                        shape = RoundedCornerShape(10.dp),
                     ) {
                         Icon(Icons.Default.Folder, contentDescription = null, tint = AccentAmber)
                         Spacer(Modifier.width(4.dp))
