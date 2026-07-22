@@ -39,7 +39,7 @@ object PendingSessionRegistry {
 
 object TerminalSessionBus {
     private const val MAX_BUFFER_CHARS = 1_000_000
-    private val clearScreenPattern = Regex("${27.toChar()}(?:c|\\[(?:2J|3J))")
+    private val clearScreenPattern = Regex("${27.toChar()}(?:c|\\[(?:H|f|[23]?J))")
 
     private val _snapshot = MutableStateFlow(TerminalSnapshot())
     val snapshot = _snapshot.asStateFlow()
@@ -126,10 +126,7 @@ object TerminalSessionBus {
 
     fun send(bytes: ByteArray) {
         val sink = writer
-        if (sink == null) {
-            append("\n[Sesja nie jest połączona]\n")
-            return
-        }
+        if (sink == null) return
         sink(bytes)
     }
 

@@ -100,16 +100,19 @@ private fun ClientSshApp(
 ) {
     val context = LocalContext.current
     val profiles = remember { mutableStateListOf<HostProfile>() }
-    val favorites = remember {
-        mutableStateListOf(
-            FavoriteCommand(name = "Root", command = "sudo -i"),
-            FavoriteCommand(name = "Wyczyść", command = "clear", runImmediately = true),
-        )
-    }
+    val favorites = remember { mutableStateListOf<FavoriteCommand>() }
     var destination by remember { mutableStateOf<Destination>(Destination.Profiles) }
     var editedProfile by remember { mutableStateOf<HostProfile?>(null) }
     var showProfileEditor by remember { mutableStateOf(false) }
     var showUpdater by remember { mutableStateOf(false) }
+
+    fun moveFavorite(favorite: FavoriteCommand, direction: Int) {
+        val index = favorites.indexOfFirst { it.id == favorite.id }
+        val target = index + direction
+        if (index < 0 || target !in favorites.indices) return
+        val item = favorites.removeAt(index)
+        favorites.add(target, item)
+    }
 
     when (val current = destination) {
         Destination.Profiles -> ProfilesScreen(
@@ -139,6 +142,8 @@ private fun ClientSshApp(
                 if (index >= 0) favorites[index] = updated else favorites.add(updated)
             },
             onDeleteFavorite = { favorites.remove(it) },
+            onMoveFavoriteUp = { moveFavorite(it, -1) },
+            onMoveFavoriteDown = { moveFavorite(it, 1) },
             onSaveLog = onSaveLog,
             onClose = {
                 onFullscreenChange(false)

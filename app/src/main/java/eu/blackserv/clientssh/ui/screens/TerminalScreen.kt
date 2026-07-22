@@ -56,12 +56,21 @@ import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.model.TextWrapMode
 import eu.blackserv.clientssh.terminal.TerminalConnectionState
 import eu.blackserv.clientssh.terminal.TerminalSessionBus
+import eu.blackserv.clientssh.ui.terminal.toPlainTerminalText
+import eu.blackserv.clientssh.ui.terminal.toTerminalAnnotatedString
+import kotlinx.coroutines.delay
 
 private val TerminalBackground = Color(0xFF020605)
 private val TerminalPanel = Color(0xFF0B1410)
 private val TerminalButton = Color(0xFF16231B)
 private val TerminalGreen = Color(0xFF62D58A)
 private val TerminalText = Color(0xFFDCE9DF)
+
+private data class TerminalShortcut(
+    val label: String,
+    val enabled: Boolean = true,
+    val action: () -> Unit,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,6 +79,8 @@ fun TerminalScreen(
     favorites: List<FavoriteCommand>,
     onSaveFavorite: (FavoriteCommand) -> Unit,
     onDeleteFavorite: (FavoriteCommand) -> Unit,
+    onMoveFavoriteUp: (FavoriteCommand) -> Unit,
+    onMoveFavoriteDown: (FavoriteCommand) -> Unit,
     onSaveLog: (String, String) -> Unit,
     onClose: () -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
@@ -80,18 +91,65 @@ fun TerminalScreen(
     var command by remember { mutableStateOf("") }
     var showFavorites by remember { mutableStateOf(false) }
     var showHealth by remember { mutableStateOf(false) }
+    var connectedOnce by remember(profile.id) { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
-    val visibleOutput = remember(session.output) { session.output.withoutAnsiControlCodes() }
+    val plainOutput = remember(session.output) { session.output.toPlainTerminalText() }
+    val annotatedOutput = remember(session.output) { session.output.toTerminalAnnotatedString(TerminalText) }
+    val controlsEnabled = session.state == TerminalConnectionState.CONNECTED
 
-    LaunchedEffect(visibleOutput.length) { verticalScroll.scrollTo(verticalScroll.maxValue) }
+    LaunchedEffect(plainOutput.length) { verticalScroll.scrollTo(verticalScroll.maxValue) }
     LaunchedEffect(fullscreen) { onFullscreenChange(fullscreen) }
+    LaunchedEffect(session.profileId, session.state) {
+        if (session.profileId != profile.id) return@LaunchedEffect
+        when (session.state) {
+            TerminalConnectionState.CONNECTED -> connectedOnce = true
+            TerminalConnectionState.DISCONNECTED -> if (connectedOnce) {
+                delay(750)
+                onFullscreenChange(false)
+                onClose()
+            }
+            else -> Unit
+        }
+    }
 
     fun sendCommand(text: String) {
-        if (text.isEmpty()) return
+        if (text.isBlank() || !controlsEnabled) return
         TerminalSessionBus.send(text + "\r")
         command = ""
+    }
+
+    fun sendRaw(text: String) {
+        if (!controlsEnabled) return
+        TerminalSessionBus.send(text)
+    }
+
+    fun sendRaw(bytes: ByteArray) {
+        if (!controlsEnabled) return
+        TerminalSessionBus.send(bytes)
+    }
+
+    val shortcuts = buildList {
+        add(TerminalShortcut("clear", controlsEnabled) { sendCommand("clear") })
+        favorites.forEach { favorite ->
+            add(
+                TerminalShortcut(favorite.name, controlsEnabled) {
+                    if (favorite.runImmediately) sendCommand(favorite.command) else command = favorite.command
+                },
+            )
+        }
+        add(TerminalShortcut("ENTER", controlsEnabled) { sendRaw("\r") })
+        add(TerminalShortcut("CTRL+C", controlsEnabled) { sendRaw(byteArrayOf(3)) })
+        add(TerminalShortcut("TAB", controlsEnabled) { sendRaw("\t") })
+        add(TerminalShortcut("CTRL+D", controlsEnabled) { sendRaw(byteArrayOf(4)) })
+        add(TerminalShortcut("↑", controlsEnabled) { sendRaw("\u001B[A") })
+        add(TerminalShortcut("↓", controlsEnabled) { sendRaw("\u001B[B") })
+        add(TerminalShortcut("←", controlsEnabled) { sendRaw("\u001B[D") })
+        add(TerminalShortcut("→", controlsEnabled) { sendRaw("\u001B[C") })
+        add(TerminalShortcut("ESC", controlsEnabled) { sendRaw(byteArrayOf(27)) })
+        add(TerminalShortcut("sudo -i", controlsEnabled) { sendCommand("sudo -i") })
+        add(TerminalShortcut("BUF CLEAR", true) { TerminalSessionBus.clearLocalBuffer() })
     }
 
     Scaffold(
@@ -112,10 +170,10 @@ fun TerminalScreen(
                         }) {
                             Icon(Icons.Default.WrapText, contentDescription = wrapMode.label)
                         }
-                        IconButton(onClick = { clipboard.setText(AnnotatedString(visibleOutput)) }) {
+                        IconButton(onClick = { clipboard.setText(AnnotatedString(plainOutput)) }) {
                             Icon(Icons.Default.ContentCopy, contentDescription = "Kopiuj bufor")
                         }
-                        IconButton(onClick = { onSaveLog("${profile.name}.log", visibleOutput) }) {
+                        IconButton(onClick = { onSaveLog("${profile.name}.log", plainOutput) }) {
                             Icon(Icons.Default.Save, contentDescription = "Zapisz log")
                         }
                         IconButton(onClick = { fullscreen = true }) {
@@ -153,8 +211,7 @@ fun TerminalScreen(
             ) {
                 SelectionContainer {
                     Text(
-                        text = visibleOutput,
-                        color = TerminalText,
+                        text = annotatedOutput,
                         fontFamily = FontFamily.Monospace,
                         softWrap = wrapMode == TextWrapMode.WRAP,
                     )
@@ -169,22 +226,7 @@ fun TerminalScreen(
                 }
             }
 
-            TerminalKeyBar { key ->
-                when (key) {
-                    "ENTER" -> TerminalSessionBus.send("\r")
-                    "CTRL+C" -> TerminalSessionBus.send(byteArrayOf(3))
-                    "CTRL+D" -> TerminalSessionBus.send(byteArrayOf(4))
-                    "TAB" -> TerminalSessionBus.send("\t")
-                    "ESC" -> TerminalSessionBus.send(byteArrayOf(27))
-                    "↑" -> TerminalSessionBus.send("\u001B[A")
-                    "↓" -> TerminalSessionBus.send("\u001B[B")
-                    "←" -> TerminalSessionBus.send("\u001B[D")
-                    "→" -> TerminalSessionBus.send("\u001B[C")
-                    "clear" -> sendCommand("clear")
-                    "sudo -i" -> sendCommand("sudo -i")
-                    "BUF CLEAR" -> TerminalSessionBus.clearLocalBuffer()
-                }
-            }
+            TerminalKeyBar(shortcuts)
 
             Row(
                 modifier = Modifier.fillMaxWidth().padding(8.dp),
@@ -197,8 +239,10 @@ fun TerminalScreen(
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("Komenda…") },
                     singleLine = true,
+                    enabled = controlsEnabled,
                 )
                 Button(
+                    enabled = controlsEnabled && command.isNotBlank(),
                     onClick = { sendCommand(command) },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = TerminalGreen,
@@ -223,6 +267,8 @@ fun TerminalScreen(
             },
             onSave = onSaveFavorite,
             onDelete = onDeleteFavorite,
+            onMoveUp = onMoveFavoriteUp,
+            onMoveDown = onMoveFavoriteDown,
         )
     }
 }
@@ -246,22 +292,24 @@ private fun ConnectionStatusBar(status: String, connected: Boolean) {
 }
 
 @Composable
-private fun TerminalKeyBar(onKey: (String) -> Unit) {
-    val keys = listOf("ENTER", "CTRL+C", "TAB", "CTRL+D", "↑", "↓", "←", "→", "ESC", "clear", "sudo -i", "BUF CLEAR")
+private fun TerminalKeyBar(shortcuts: List<TerminalShortcut>) {
     LazyRow(
         modifier = Modifier.fillMaxWidth().background(TerminalPanel).padding(vertical = 6.dp),
         contentPadding = PaddingValues(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        items(keys) { key ->
+        items(shortcuts) { shortcut ->
             Button(
-                onClick = { onKey(key) },
+                enabled = shortcut.enabled,
+                onClick = shortcut.action,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = TerminalButton,
                     contentColor = TerminalGreen,
+                    disabledContainerColor = TerminalButton.copy(alpha = 0.55f),
+                    disabledContentColor = TerminalGreen.copy(alpha = 0.45f),
                 ),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            ) { Text(key) }
+            ) { Text(shortcut.label) }
         }
     }
 }
@@ -276,8 +324,3 @@ private fun HealthCard(profile: HostProfile) {
         }
     }
 }
-
-private fun String.withoutAnsiControlCodes(): String = replace(
-    Regex("\\u001B(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])"),
-    "",
-)

@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -35,6 +37,8 @@ fun FavoritesDialog(
     onRun: (FavoriteCommand) -> Unit,
     onSave: (FavoriteCommand) -> Unit,
     onDelete: (FavoriteCommand) -> Unit,
+    onMoveUp: (FavoriteCommand) -> Unit,
+    onMoveDown: (FavoriteCommand) -> Unit,
 ) {
     var edited by remember { mutableStateOf<FavoriteCommand?>(null) }
     var creating by remember { mutableStateOf(false) }
@@ -45,7 +49,7 @@ fun FavoritesDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (favorites.isEmpty()) Text("Nie masz jeszcze ulubionych komend.")
-                favorites.forEach { favorite ->
+                favorites.forEachIndexed { index, favorite ->
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Text(favorite.name)
@@ -57,6 +61,18 @@ fun FavoritesDialog(
                                 TextButton(onClick = { onInsert(favorite) }) { Text("Wstaw") }
                                 TextButton(onClick = { onRun(favorite) }) { Text("Uruchom") }
                                 androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                                IconButton(
+                                    enabled = index > 0,
+                                    onClick = { onMoveUp(favorite) },
+                                ) {
+                                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Przesuń wyżej")
+                                }
+                                IconButton(
+                                    enabled = index < favorites.lastIndex,
+                                    onClick = { onMoveDown(favorite) },
+                                ) {
+                                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Przesuń niżej")
+                                }
                                 IconButton(onClick = { edited = favorite }) {
                                     Icon(Icons.Default.Edit, contentDescription = "Edytuj")
                                 }
