@@ -88,7 +88,7 @@ class TerminalSessionService : Service() {
         if (TerminalSessionBus.snapshot.value.state == TerminalConnectionState.CONNECTED) {
             TerminalSessionBus.markDisconnected("Sesja zamknięta")
         }
-        activeProfile?.id?.let(PendingSessionRegistry::remove)
+        activeProfile?.id?.let { PendingSessionRegistry.remove(it) }
         super.onDestroy()
     }
 
@@ -190,7 +190,7 @@ class TerminalSessionService : Service() {
         connectionJob?.cancel()
         closeTransport()
         TerminalSessionBus.markDisconnected("Rozłączono z powiadomienia")
-        profile?.id?.let(PendingSessionRegistry::remove)
+        profile?.id?.let { PendingSessionRegistry.remove(it) }
         activeProfile = null
     }
 
