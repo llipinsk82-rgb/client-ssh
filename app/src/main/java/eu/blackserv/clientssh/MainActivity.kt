@@ -30,6 +30,7 @@ import eu.blackserv.clientssh.ui.screens.SftpScreen
 import eu.blackserv.clientssh.ui.screens.TerminalScreen
 import eu.blackserv.clientssh.ui.screens.UpdateDialog
 import eu.blackserv.clientssh.ui.theme.ClientSshTheme
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     private var pendingLogContent: String = ""
@@ -147,6 +148,13 @@ private fun ClientSshApp(
             },
             onEdit = {
                 editedProfile = it
+                showProfileEditor = true
+            },
+            onClone = { profile ->
+                editedProfile = profile.copy(
+                    id = UUID.randomUUID().toString(),
+                    name = profile.name.ifBlank { profile.host }.let { "$it kopia" },
+                )
                 showProfileEditor = true
             },
             onDelete = {
