@@ -143,6 +143,18 @@ fun TerminalScreen(
     }
 
     val shortcuts = buildList {
+        add(
+            TerminalShortcut(
+                if (terminalSettings.keepScreenAwake) "EKRAN ON" else "EKRAN OFF",
+                true,
+            ) {
+                onTerminalSettingsChange(
+                    terminalSettings.copy(
+                        keepScreenAwake = !terminalSettings.keepScreenAwake,
+                    ),
+                )
+            },
+        )
         favorites.forEach { favorite ->
             add(
                 TerminalShortcut(favorite.name, controlsEnabled) {
@@ -166,23 +178,9 @@ fun TerminalScreen(
         topBar = {
             if (!fullscreen) {
                 TopAppBar(
-                    title = { Text(profile.name.take(12)) },
+                    title = { Text("") },
                     navigationIcon = { TextButton(onClick = onClose) { Text("Wstecz") } },
                     actions = {
-                        IconButton(
-                            onClick = {
-                                onTerminalSettingsChange(
-                                    terminalSettings.copy(
-                                        keepScreenAwake = !terminalSettings.keepScreenAwake,
-                                    ),
-                                )
-                            },
-                        ) {
-                            Text(
-                                text = if (terminalSettings.keepScreenAwake) "☀" else "○",
-                                color = TerminalGreen,
-                            )
-                        }
                         IconButton(onClick = { showHealth = !showHealth }) {
                             Icon(Icons.Default.HealthAndSafety, contentDescription = "Health")
                         }
