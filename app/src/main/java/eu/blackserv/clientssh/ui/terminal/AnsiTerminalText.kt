@@ -68,7 +68,7 @@ private fun brightAnsiColor(code: Int, defaultColor: Color): Color = when (code)
     else -> defaultColor
 }
 
-private inline fun String.walkTerminalText(
+private fun String.walkTerminalText(
     onText: (String) -> Unit,
     onSgr: (List<Int>) -> Unit,
 ) {
