@@ -7,12 +7,21 @@ Ten dokument jest aktualizowany po wydaniach, żeby kolejny czat mógł kontynuo
 - GitHub: `llipinsk82-rgb/client-ssh`
 - Aplikacja: Android / Kotlin / Jetpack Compose
 - Pakiet: `eu.blackserv.clientssh`
-- Obecna wersja robocza po tym wydaniu: `0.3.1`
+- Obecna wersja robocza po tym wydaniu: `0.3.2`
 - Podpis APK: stały keystore update, używany dla debug/release, żeby kolejne APK instalowały się jako aktualizacja.
 
 ## Cel aplikacji
 
 Client SSH nie ma być zwykłym klientem SSH. To narzędzie administracyjne BlackServ do codziennej obsługi VPS-ów i tunerów Enigma2 z telefonu, szczególnie z małego ekranu Samsung Galaxy S20.
+
+## Zasady pracy z Łukaszem
+
+- Asystent w projekcie: Ezra.
+- Styl: luźny, konkretny, bez biurowego bełkotu.
+- Komenda `go` oznacza akceptację pomysłu/projektu i wykonanie.
+- Jeśli jest jasna praca do wykonania, Ezra pracuje sam i nie czeka na kolejne potwierdzenia.
+- Po pytaniu Łukasza: odpowiedzieć krótko i wrócić do pracy, jeśli jest co robić.
+- Wyjątek: tematy krytyczne bezpieczeństwa — wtedy stop i czekamy na decyzję.
 
 ## Założenia funkcjonalne
 
@@ -32,7 +41,9 @@ Client SSH nie ma być zwykłym klientem SSH. To narzędzie administracyjne Blac
 - Prawdziwa sesja SSH z PTY.
 - Terminal fullscreen.
 - Foreground service i keepalive.
-- Sesja powinna trwać przy blokadzie ekranu i przełączaniu aplikacji.
+- Sesja trwa przy blokadzie ekranu i przełączaniu aplikacji.
+- Od `0.3.2`: zwykłe wyjście z ekranu terminala przez `Wstecz` nie rozłącza SSH.
+- Od `0.3.2`: foreground notification pokazuje `Client SSH działa w tle` i ma akcję `Rozłącz`.
 - `Ctrl+D` oraz `exit` zamykają ekran terminala po zakończeniu powłoki.
 - `clear` wykonuje prawdziwe czyszczenie terminala.
 - Lokalny `BUF CLEAR` czyści tylko bufor aplikacji.
@@ -62,6 +73,7 @@ Client SSH nie ma być zwykłym klientem SSH. To narzędzie administracyjne Blac
 - Usuwa pliki i puste katalogi po potwierdzeniu.
 - Od wersji 0.3.0 widok SFTP jest kompaktowy w stylu Total Commander: cienkie wiersze, menu akcji pod trzema kropkami, mniej dużych kart.
 - Od wersji 0.3.1 SFTP ma mocniejszy styl premium: warstwy, cienie, cienkie linie, obramowania i boczny akcent folder/plik.
+- Uwaga: w 0.3.2 Session Keeper dotyczy terminala SSH; SFTP nadal rozłącza się po wyjściu z ekranu SFTP.
 
 ## Wygląd / UX
 
@@ -73,12 +85,21 @@ Aktualny kierunek wizualny:
 - bez jaskrawego niebieskiego Material,
 - mniej dużych okrągłych przycisków,
 - bardziej profesjonalne, zwarte panele,
-- nie tylko zmiana koloru: mają być widoczne warstwy, cienie, cienkie linie, separatory i obramowania,
+- widoczne warstwy, cienie, cienkie linie, separatory i obramowania,
 - styl ma iść w stronę narzędzia admina premium, a nie zwykłego prototypu Material.
 
-Wersja 0.3.0 zmieniła paletę, ekran główny i kompakt SFTP. Po opinii użytkownika uznano, że to było za mało — bardziej zmiana kolorów niż pełny design. Wersja 0.3.1 robi drugi pass: głębia paneli, cienie, boczne akcenty, techniczne przyciski, separatory i lepsze warstwowanie.
+Łukasz pokazał kierunek `BlackServ Neon`: ciemne tło, zielony glow, amber dla SFTP, dolna belka `Serwery / Historia / Ustawienia`. Kierunek jest zaakceptowany jako opcjonalny skin, ale nie kopiować go 1:1 jako jedynego domyślnego wyglądu.
 
 ## Ostatnie wydania
+
+### 0.3.2
+
+- Session Keeper dla terminala SSH.
+- Terminal nie rozłącza się po zwykłym `Wstecz` z ekranu.
+- Foreground notification: `Client SSH działa w tle`.
+- Powiadomienie ma akcję `Rozłącz`.
+- Dotknięcie powiadomienia otwiera aplikację z intencją powrotu do aktywnej sesji.
+- SFTP bez zmian: rozłącza się po wyjściu z ekranu SFTP.
 
 ### 0.3.1
 
@@ -116,10 +137,11 @@ Wersja 0.3.0 zmieniła paletę, ekran główny i kompakt SFTP. Po opinii użytko
 
 ## Najbliższa kolejność
 
-1. Realny Health Monitor.
-2. Dalsze poprawki SFTP po testach na telefonie.
-3. Utrwalenie preferencji terminala, np. rozmiaru czcionki po pinch-to-zoom.
-4. Dalsze dopracowanie wyglądu, jeżeli po testach użytkownik wskaże elementy do poprawy.
+1. `0.3.3` — dolna belka `Serwery / Historia / Ustawienia`, ekran ustawień, podstawy skinów, `BlackServ Neon`.
+2. `0.3.4` — diagnostyka kluczy SSH/OpenSSH: typ klucza, fingerprint, public key, passphrase, test auth, dokładne błędy.
+3. `0.3.5` — realny Health Monitor.
+4. Dalsze poprawki SFTP po testach na telefonie: sortowanie, breadcrumb, multi-select, show hidden, batch actions.
+5. Utrwalenie preferencji terminala, np. rozmiaru czcionki po pinch-to-zoom.
 
 ## Health Monitor — oczekiwany kierunek
 
@@ -136,9 +158,30 @@ Monitor ma być praktyczny, nie dekoracyjny. Powinien pokazać szybki stan hosta
 
 Najprostszy start: wykonywać zestaw komend po SSH i parsować wynik. Ważne, żeby nie zrywać głównej sesji terminala i nie blokować UI.
 
+## Klucze SSH — problem do rozwiązania
+
+Łukasz wygenerował klucz OpenSSH, ale aplikacja nadal zgłasza błąd logowania kluczem. Nie wolno prosić o prywatny klucz.
+
+Do wdrożenia:
+
+- wykrycie typu klucza,
+- fingerprint SHA256,
+- public key do skopiowania,
+- pole passphrase,
+- test klucza przed zapisem profilu,
+- dokładniejszy komunikat: `klucz nieczytelny`, `zła passphrase`, `serwer odrzucił klucz`, `auth fail`.
+
 ## Ważne uwagi testowe
 
 - Usuwanie w SFTP działa realnie na serwerze. Testować ostrożnie.
 - OTA najlepiej testować przechodząc z wersji poprzedniej na nowszą przez aplikację, nie przez ręczną instalację APK.
 - Jeśli Android pyta o zgodę na instalowanie z aplikacji, trzeba ją włączyć i ponowić instalację.
 - Profile po 0.2.5+ powinny zostawać po update.
+- Session Keeper może zostać ubity przez Androida przy agresywnej optymalizacji baterii albo po ręcznym wymuszeniu zatrzymania aplikacji.
+
+## Bezpieczeństwo dokumentacji
+
+- Nie publikować surowej rozmowy na GitHub.
+- Nie publikować screenów z hostami/loginami/portami w repo.
+- Nie publikować prywatnych kluczy SSH.
+- Publiczne logi w repo muszą być sanityzowane.
