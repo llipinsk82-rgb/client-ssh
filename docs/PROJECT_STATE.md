@@ -7,7 +7,7 @@ Ten dokument jest aktualizowany po wydaniach, żeby kolejny czat mógł kontynuo
 - GitHub: `llipinsk82-rgb/client-ssh`
 - Aplikacja: Android / Kotlin / Jetpack Compose
 - Pakiet: `eu.blackserv.clientssh`
-- Obecna wersja robocza po tym wydaniu: `0.3.0`
+- Obecna wersja robocza po tym wydaniu: `0.3.1`
 - Podpis APK: stały keystore update, używany dla debug/release, żeby kolejne APK instalowały się jako aktualizacja.
 
 ## Cel aplikacji
@@ -61,6 +61,7 @@ Client SSH nie ma być zwykłym klientem SSH. To narzędzie administracyjne Blac
 - Zmienia nazwy plików/katalogów.
 - Usuwa pliki i puste katalogi po potwierdzeniu.
 - Od wersji 0.3.0 widok SFTP jest kompaktowy w stylu Total Commander: cienkie wiersze, menu akcji pod trzema kropkami, mniej dużych kart.
+- Od wersji 0.3.1 SFTP ma mocniejszy styl premium: warstwy, cienie, cienkie linie, obramowania i boczny akcent folder/plik.
 
 ## Wygląd / UX
 
@@ -72,29 +73,19 @@ Aktualny kierunek wizualny:
 - bez jaskrawego niebieskiego Material,
 - mniej dużych okrągłych przycisków,
 - bardziej profesjonalne, zwarte panele,
-- najpierw funkcjonalność, potem dalsze dopieszczanie.
+- nie tylko zmiana koloru: mają być widoczne warstwy, cienie, cienkie linie, separatory i obramowania,
+- styl ma iść w stronę narzędzia admina premium, a nie zwykłego prototypu Material.
 
-Wersja 0.3.0 zmieniła ekran główny, SFTP i paletę globalną. Terminal już wcześniej miał ciemny styl.
+Wersja 0.3.0 zmieniła paletę, ekran główny i kompakt SFTP. Po opinii użytkownika uznano, że to było za mało — bardziej zmiana kolorów niż pełny design. Wersja 0.3.1 robi drugi pass: głębia paneli, cienie, boczne akcenty, techniczne przyciski, separatory i lepsze warstwowanie.
 
 ## Ostatnie wydania
 
-### 0.2.7
+### 0.3.1
 
-- Odchudzone ulubione komendy.
-- Przełącznik niewygaszania ekranu przeniesiony do paska statusu hosta.
-- Dodane klonowanie profili.
-
-### 0.2.8
-
-- Utwardzony OTA updater.
-- Wybór najnowszego wydania z listy Releases.
-- Weryfikacja SHA-256 pobranego APK.
-
-### 0.2.9
-
-- Realny SFTP.
-- Lista plików/katalogów.
-- Upload/download/rename/delete/mkdir.
+- Premium UI pass po uwadze, że 0.3.0 zmieniło głównie kolory.
+- Hosty: panele z cienką linią highlight, cieniem, bocznym akcentem i technicznymi przyciskami.
+- SFTP: większa głębia, obramowania, akcent folder/plik, panelowy header.
+- Globalne shapes i paleta dopasowane do stylu BlackServ.
 
 ### 0.3.0
 
@@ -104,6 +95,24 @@ Wersja 0.3.0 zmieniła ekran główny, SFTP i paletę globalną. Terminal już w
 - Menu akcji dla pozycji SFTP.
 - Pinch-to-zoom terminala.
 - Dodana dokumentacja ciągłości projektu.
+
+### 0.2.9
+
+- Realny SFTP.
+- Lista plików/katalogów.
+- Upload/download/rename/delete/mkdir.
+
+### 0.2.8
+
+- Utwardzony OTA updater.
+- Wybór najnowszego wydania z listy Releases.
+- Weryfikacja SHA-256 pobranego APK.
+
+### 0.2.7
+
+- Odchudzone ulubione komendy.
+- Przełącznik niewygaszania ekranu przeniesiony do paska statusu hosta.
+- Dodane klonowanie profili.
 
 ## Najbliższa kolejność
 
