@@ -37,3 +37,7 @@ BlackServ Client SSH to lekki klient administracyjny dla Androida przeznaczony d
 ## Aktualizacje
 
 Wydania po połączeniu zmian z gałęzią `main` są automatycznie budowane jako podpisany APK i publikowane w GitHub Releases. Aplikacja sprawdza najnowszy Release, pobiera APK i przekazuje go systemowemu instalatorowi Androida.
+
+## Build
+
+Gałąź `agent/verify-0.2.7` służy tylko do wygenerowania APK testowego z aktualnego kodu 0.2.7.
