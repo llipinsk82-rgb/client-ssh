@@ -1,7 +1,6 @@
 package eu.blackserv.clientssh.ui.screens
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,8 +20,10 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -41,121 +42,147 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.blackserv.clientssh.BuildConfig
+import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.ui.theme.AppBackdrop
+import eu.blackserv.clientssh.ui.theme.LocalAppSkin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfilesScreen(
     profiles: List<HostProfile>,
+    activeProfileId: String?,
+    activeSessionStatus: String,
     onAdd: () -> Unit,
     onEdit: (HostProfile) -> Unit,
     onClone: (HostProfile) -> Unit,
     onDelete: (HostProfile) -> Unit,
     onConnect: (HostProfile) -> Unit,
+    onDisconnectActiveSession: () -> Unit,
     onOpenSftp: (HostProfile) -> Unit,
     onCheckUpdates: () -> Unit,
 ) {
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    actionIconContentColor = MaterialTheme.colorScheme.primary,
-                ),
-                title = {
-                    Column {
-                        Text("Client SSH", fontWeight = FontWeight.Bold)
-                        Text(
-                            "BlackServ command deck • v${BuildConfig.VERSION_NAME}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onCheckUpdates) {
-                        Icon(Icons.Default.SystemUpdateAlt, contentDescription = "Sprawdź aktualizacje")
-                    }
-                },
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAdd,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Dodaj profil")
-            }
-        },
-    ) { padding ->
-        if (profiles.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = MaterialTheme.shapes.large,
-                    tonalElevation = 2.dp,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    val skin = LocalAppSkin.current
+
+    AppBackdrop {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(
+                            alpha = if (skin == AppSkin.NEON) 0.90f else 1f,
+                        ),
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.primary,
+                    ),
+                    title = {
+                        Column {
+                            Text("Client SSH", fontWeight = FontWeight.Bold)
+                            Text(
+                                if (skin == AppSkin.NEON) {
+                                    "BLACKSERV NEON // COMMAND DECK // v${BuildConfig.VERSION_NAME}"
+                                } else {
+                                    "BlackServ command deck • v${BuildConfig.VERSION_NAME}"
+                                },
+                                color = if (skin == AppSkin.NEON) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onCheckUpdates) {
+                            Icon(Icons.Default.SystemUpdateAlt, contentDescription = "Sprawdź aktualizacje")
+                        }
+                    },
+                )
+            },
+            floatingActionButton = {
+                FloatingActionButton(
+                    onClick = onAdd,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    Icon(Icons.Default.Add, contentDescription = "Dodaj profil")
+                }
+            },
+        ) { padding ->
+            if (profiles.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(
+                            alpha = if (skin == AppSkin.NEON) 0.88f else 1f,
+                        ),
+                        shape = MaterialTheme.shapes.large,
+                        tonalElevation = if (skin == AppSkin.NEON) 8.dp else 2.dp,
+                        shadowElevation = if (skin == AppSkin.NEON) 12.dp else 0.dp,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     ) {
-                        Icon(
-                            Icons.Default.Computer,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Text("Brak profili", fontWeight = FontWeight.Bold)
-                        Text(
-                            "Dodaj VPS lub tuner Enigma2 przez SSH albo Telnet.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Button(
-                            onClick = onAdd,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                            ),
-                            modifier = Modifier.padding(top = 10.dp),
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text("Dodaj pierwszy profil")
+                            Icon(
+                                Icons.Default.Computer,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Text("Brak profili", fontWeight = FontWeight.Bold)
+                            Text(
+                                "Dodaj VPS lub tuner Enigma2 przez SSH albo Telnet.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Button(
+                                onClick = onAdd,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                ),
+                                modifier = Modifier.padding(top = 10.dp),
+                            ) {
+                                Text("Dodaj pierwszy profil")
+                            }
                         }
                     }
                 }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(MaterialTheme.colorScheme.background),
-                contentPadding = PaddingValues(10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(profiles, key = { it.id }) { profile ->
-                    HostProfileRow(
-                        profile = profile,
-                        onConnect = onConnect,
-                        onOpenSftp = onOpenSftp,
-                        onClone = onClone,
-                        onEdit = onEdit,
-                        onDelete = onDelete,
-                    )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentPadding = PaddingValues(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(profiles, key = { it.id }) { profile ->
+                        HostProfileRow(
+                            profile = profile,
+                            isActive = activeProfileId == profile.id,
+                            activeSessionStatus = activeSessionStatus,
+                            onConnect = onConnect,
+                            onDisconnectActiveSession = onDisconnectActiveSession,
+                            onOpenSftp = onOpenSftp,
+                            onClone = onClone,
+                            onEdit = onEdit,
+                            onDelete = onDelete,
+                        )
+                    }
                 }
             }
         }
@@ -165,17 +192,38 @@ fun ProfilesScreen(
 @Composable
 private fun HostProfileRow(
     profile: HostProfile,
+    isActive: Boolean,
+    activeSessionStatus: String,
     onConnect: (HostProfile) -> Unit,
+    onDisconnectActiveSession: () -> Unit,
     onOpenSftp: (HostProfile) -> Unit,
     onClone: (HostProfile) -> Unit,
     onEdit: (HostProfile) -> Unit,
     onDelete: (HostProfile) -> Unit,
 ) {
+    val skin = LocalAppSkin.current
+    val borderColor = when {
+        isActive -> MaterialTheme.colorScheme.primary
+        skin == AppSkin.NEON -> MaterialTheme.colorScheme.outline.copy(alpha = 0.85f)
+        else -> MaterialTheme.colorScheme.outline
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(
+                alpha = if (skin == AppSkin.NEON) 0.90f else 1f,
+            ),
+        ),
+        border = BorderStroke(if (isActive) 1.5.dp else 1.dp, borderColor),
         shape = MaterialTheme.shapes.medium,
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = when {
+                isActive && skin == AppSkin.NEON -> 12.dp
+                skin == AppSkin.NEON -> 5.dp
+                else -> 0.dp
+            },
+        ),
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -207,14 +255,42 @@ private fun HostProfileRow(
                         tint = MaterialTheme.colorScheme.tertiary,
                     )
                 }
-                IconButton(onClick = { onDelete(profile) }) {
+                IconButton(
+                    enabled = !isActive,
+                    onClick = { onDelete(profile) },
+                ) {
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = "Usuń",
-                        tint = MaterialTheme.colorScheme.error,
+                        tint = if (isActive) {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
                     )
                 }
             }
+
+            if (isActive) {
+                AssistChip(
+                    onClick = { onConnect(profile) },
+                    label = {
+                        Text(
+                            "● AKTYWNA SESJA • $activeSessionStatus",
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        labelColor = MaterialTheme.colorScheme.primary,
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                )
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -230,7 +306,7 @@ private fun HostProfileRow(
                     ),
                     shape = MaterialTheme.shapes.small,
                 ) {
-                    Text("Terminal")
+                    Text(if (isActive) "Wróć do terminala" else "Terminal")
                 }
                 if (profile.protocol == ConnectionProtocol.SSH) {
                     OutlinedButton(
@@ -245,6 +321,24 @@ private fun HostProfileRow(
                         Spacer(Modifier.width(4.dp))
                         Text("SFTP")
                     }
+                }
+            }
+
+            if (isActive) {
+                OutlinedButton(
+                    onClick = onDisconnectActiveSession,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.75f)),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Icon(Icons.Default.PowerSettingsNew, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Rozłącz aktywną sesję")
                 }
             }
         }
