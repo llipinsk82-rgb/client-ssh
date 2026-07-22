@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
@@ -43,6 +44,7 @@ fun ProfilesScreen(
     profiles: List<HostProfile>,
     onAdd: () -> Unit,
     onEdit: (HostProfile) -> Unit,
+    onClone: (HostProfile) -> Unit,
     onDelete: (HostProfile) -> Unit,
     onConnect: (HostProfile) -> Unit,
     onOpenSftp: (HostProfile) -> Unit,
@@ -94,6 +96,9 @@ fun ProfilesScreen(
                                     Text("${profile.username.ifBlank { "—" }}@${profile.host}:${profile.port}")
                                 }
                                 AssistChip(onClick = {}, label = { Text(profile.protocol.label) })
+                                IconButton(onClick = { onClone(profile) }) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "Klonuj")
+                                }
                                 IconButton(onClick = { onEdit(profile) }) {
                                     Icon(Icons.Default.Edit, contentDescription = "Edytuj")
                                 }
