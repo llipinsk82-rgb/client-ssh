@@ -143,18 +143,6 @@ fun TerminalScreen(
     }
 
     val shortcuts = buildList {
-        add(
-            TerminalShortcut(
-                if (terminalSettings.keepScreenAwake) "EKRAN ON" else "EKRAN OFF",
-                true,
-            ) {
-                onTerminalSettingsChange(
-                    terminalSettings.copy(
-                        keepScreenAwake = !terminalSettings.keepScreenAwake,
-                    ),
-                )
-            },
-        )
         favorites.forEach { favorite ->
             add(
                 TerminalShortcut(favorite.name, controlsEnabled) {
@@ -216,6 +204,12 @@ fun TerminalScreen(
             ConnectionStatusBar(
                 status = session.statusText,
                 connected = session.state == TerminalConnectionState.CONNECTED,
+                keepScreenAwake = terminalSettings.keepScreenAwake,
+                onToggleKeepScreenAwake = {
+                    onTerminalSettingsChange(
+                        terminalSettings.copy(keepScreenAwake = !terminalSettings.keepScreenAwake),
+                    )
+                },
             )
 
             if (showHealth) HealthCard(profile)
@@ -279,14 +273,6 @@ fun TerminalScreen(
         FavoritesDialog(
             favorites = favorites,
             onDismiss = { showFavorites = false },
-            onInsert = {
-                command = it.command
-                showFavorites = false
-            },
-            onRun = {
-                sendCommand(it.command)
-                showFavorites = false
-            },
             onSave = onSaveFavorite,
             onDelete = onDeleteFavorite,
             onMoveUp = onMoveFavoriteUp,
@@ -296,19 +282,35 @@ fun TerminalScreen(
 }
 
 @Composable
-private fun ConnectionStatusBar(status: String, connected: Boolean) {
+private fun ConnectionStatusBar(
+    status: String,
+    connected: Boolean,
+    keepScreenAwake: Boolean,
+    onToggleKeepScreenAwake: () -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
         color = TerminalPanel,
         shape = RoundedCornerShape(10.dp),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(if (connected) "●" else "○", color = if (connected) TerminalGreen else Color(0xFF9AA7A0))
-            Text(status, color = TerminalText, fontFamily = FontFamily.Monospace)
+            Text(
+                text = status,
+                modifier = Modifier.weight(1f),
+                color = TerminalText,
+                fontFamily = FontFamily.Monospace,
+            )
+            IconButton(onClick = onToggleKeepScreenAwake) {
+                Text(
+                    text = if (keepScreenAwake) "☀" else "○",
+                    color = if (keepScreenAwake) TerminalGreen else Color(0xFF9AA7A0),
+                )
+            }
         }
     }
 }
