@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +25,7 @@ import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.service.TerminalSessionService
 import eu.blackserv.clientssh.storage.LocalAppStore
 import eu.blackserv.clientssh.terminal.PendingSessionRegistry
+import eu.blackserv.clientssh.terminal.TerminalConnectionState
 import eu.blackserv.clientssh.terminal.TerminalSessionBus
 import eu.blackserv.clientssh.ui.screens.ProfileEditorDialog
 import eu.blackserv.clientssh.ui.screens.ProfilesScreen
@@ -49,10 +52,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        val openActiveTerminal = intent?.action == ACTION_OPEN_ACTIVE_TERMINAL
 
         setContent {
             ClientSshTheme(darkTheme = true) {
                 ClientSshApp(
+                    openActiveTerminalOnStart = openActiveTerminal,
                     onSessionStarted = ::startSessionService,
                     onSessionStopped = ::stopSessionService,
                     onFullscreenChange = ::setFullscreen,
@@ -96,6 +101,10 @@ class MainActivity : ComponentActivity() {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
+
+    companion object {
+        const val ACTION_OPEN_ACTIVE_TERMINAL = "eu.blackserv.clientssh.action.OPEN_ACTIVE_TERMINAL"
+    }
 }
 
 private sealed interface Destination {
@@ -106,6 +115,7 @@ private sealed interface Destination {
 
 @Composable
 private fun ClientSshApp(
+    openActiveTerminalOnStart: Boolean,
     onSessionStarted: (HostProfile) -> Unit,
     onSessionStopped: () -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
@@ -116,11 +126,22 @@ private fun ClientSshApp(
     val appStore = remember(context.applicationContext) { LocalAppStore(context.applicationContext) }
     val profiles = remember(appStore) { mutableStateListOf<HostProfile>().also { it.addAll(appStore.loadProfiles()) } }
     val favorites = remember(appStore) { mutableStateListOf<FavoriteCommand>().also { it.addAll(appStore.loadFavorites()) } }
+    val session by TerminalSessionBus.snapshot.collectAsState()
     var terminalSettings by remember(appStore) { mutableStateOf(appStore.loadTerminalSettings()) }
     var destination by remember { mutableStateOf<Destination>(Destination.Profiles) }
     var editedProfile by remember { mutableStateOf<HostProfile?>(null) }
     var showProfileEditor by remember { mutableStateOf(false) }
     var showUpdater by remember { mutableStateOf(false) }
+
+    val activeProfile = profiles.firstOrNull { it.id == session.profileId }
+    val hasBackgroundSession = session.state == TerminalConnectionState.CONNECTED ||
+        session.state == TerminalConnectionState.CONNECTING
+
+    LaunchedEffect(openActiveTerminalOnStart, session.profileId, profiles.size) {
+        if (openActiveTerminalOnStart && hasBackgroundSession && activeProfile != null) {
+            destination = Destination.Terminal(activeProfile)
+        }
+    }
 
     fun saveProfiles() = appStore.saveProfiles(profiles)
     fun saveFavorites() = appStore.saveFavorites(favorites)
@@ -142,6 +163,15 @@ private fun ClientSshApp(
     when (val current = destination) {
         Destination.Profiles -> ProfilesScreen(
             profiles = profiles,
+            activeSessionName = if (hasBackgroundSession) session.profileName.ifBlank { activeProfile?.name.orEmpty() } else null,
+            activeSessionStatus = if (hasBackgroundSession) session.statusText else null,
+            onResumeActiveSession = activeProfile?.let { profile ->
+                { destination = Destination.Terminal(profile) }
+            },
+            onDisconnectActiveSession = {
+                onSessionStopped()
+                destination = Destination.Profiles
+            },
             onAdd = {
                 editedProfile = null
                 showProfileEditor = true
@@ -189,7 +219,6 @@ private fun ClientSshApp(
             onClose = {
                 onFullscreenChange(false)
                 onKeepScreenAwakeChange(false)
-                onSessionStopped()
                 destination = Destination.Profiles
             },
             onFullscreenChange = onFullscreenChange,
