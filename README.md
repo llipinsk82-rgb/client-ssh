@@ -2,7 +2,7 @@
 
 BlackServ Client SSH to lekki klient administracyjny dla Androida przeznaczony do codziennej obsługi VPS-ów i tunerów Enigma2.
 
-## Wersja 0.2.6
+## Wersja 0.2.7
 
 - prawdziwa sesja SSH z PTY,
 - logowanie hasłem,
@@ -14,8 +14,10 @@ BlackServ Client SSH to lekki klient administracyjny dla Androida przeznaczony d
 - odporniejsze wczytywanie profili po błędzie sekretu/Keystore,
 - sekrety profili są zapisywane przez Android Keystore,
 - gotowe komendy `clear` i `sudo -i` są edytowalnymi ulubionymi komendami,
+- odchudzone ulubione komendy: bez `Wstaw` i `Uruchom`,
 - widoczny przycisk `Usuń` dla ulubionych komend,
-- przełącznik niewygaszania ekranu przeniesiony z górnej belki na dolny pasek skrótów,
+- przełącznik niewygaszania ekranu przeniesiony do paska statusu hosta po prawej stronie,
+- dodane klonowanie profilu hosta do szybkiej zmiany portu/nazwy,
 - górna belka dopasowana do małych ekranów,
 - poprawione `clear` i usuwanie fałszywego promptu z sekwencji OSC,
 - kolorowy terminal z podstawową obsługą ANSI,
