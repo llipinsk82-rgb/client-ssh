@@ -1,5 +1,6 @@
 package eu.blackserv.clientssh.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Computer
@@ -41,19 +41,12 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.blackserv.clientssh.BuildConfig
 import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.HostProfile
-
-private val ScreenBackground = Color(0xFF08100D)
-private val PanelColor = Color(0xFF101A16)
-private val PanelStroke = Color(0xFF26372F)
-private val AccentGreen = Color(0xFF62D58A)
-private val MutedText = Color(0xFFA7B5AD)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,20 +61,20 @@ fun ProfilesScreen(
     onCheckUpdates: () -> Unit,
 ) {
     Scaffold(
-        containerColor = ScreenBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF0A1511),
-                    titleContentColor = Color(0xFFE6F0EA),
-                    actionIconContentColor = AccentGreen,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.primary,
                 ),
                 title = {
                     Column {
                         Text("Client SSH", fontWeight = FontWeight.Bold)
                         Text(
-                            "BlackServ • v${BuildConfig.VERSION_NAME}",
-                            color = MutedText,
+                            "BlackServ command deck • v${BuildConfig.VERSION_NAME}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelSmall,
                         )
                     }
@@ -96,8 +89,8 @@ fun ProfilesScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onAdd,
-                containerColor = AccentGreen,
-                contentColor = Color(0xFF06120B),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Dodaj profil")
             }
@@ -105,28 +98,38 @@ fun ProfilesScreen(
     ) { padding ->
         if (profiles.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(24.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Surface(
-                    color = PanelColor,
-                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = MaterialTheme.shapes.large,
                     tonalElevation = 2.dp,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, PanelStroke),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 ) {
                     Column(
                         modifier = Modifier.padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(Icons.Default.Computer, contentDescription = null, tint = AccentGreen)
+                        Icon(
+                            Icons.Default.Computer,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
                         Text("Brak profili", fontWeight = FontWeight.Bold)
-                        Text("Dodaj VPS lub tuner Enigma2 przez SSH albo Telnet.", color = MutedText)
+                        Text(
+                            "Dodaj VPS lub tuner Enigma2 przez SSH albo Telnet.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Button(
                             onClick = onAdd,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = AccentGreen,
-                                contentColor = Color(0xFF06120B),
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
                             ),
                             modifier = Modifier.padding(top = 10.dp),
                         ) {
@@ -137,7 +140,10 @@ fun ProfilesScreen(
             }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding).background(ScreenBackground),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .background(MaterialTheme.colorScheme.background),
                 contentPadding = PaddingValues(10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -167,53 +173,75 @@ private fun HostProfileRow(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = PanelColor),
-        border = androidx.compose.foundation.BorderStroke(1.dp, PanelStroke),
-        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(profile.name, fontWeight = FontWeight.Bold, color = Color(0xFFE6F0EA))
+                    Text(
+                        profile.name,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
                     Text(
                         "${profile.username.ifBlank { "—" }}@${profile.host}:${profile.port}",
-                        color = MutedText,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
                 AssistChip(onClick = {}, label = { Text(profile.protocol.label) })
                 IconButton(onClick = { onClone(profile) }) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Klonuj", tint = MutedText)
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Klonuj",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 IconButton(onClick = { onEdit(profile) }) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edytuj", tint = MutedText)
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = "Edytuj",
+                        tint = MaterialTheme.colorScheme.tertiary,
+                    )
                 }
                 IconButton(onClick = { onDelete(profile) }) {
-                    Icon(Icons.Default.Delete, contentDescription = "Usuń", tint = Color(0xFFE88989))
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Usuń",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Button(
                     onClick = { onConnect(profile) },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentGreen,
-                        contentColor = Color(0xFF06120B),
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
-                    shape = RoundedCornerShape(10.dp),
+                    shape = MaterialTheme.shapes.small,
                 ) {
                     Text("Terminal")
                 }
                 if (profile.protocol == ConnectionProtocol.SSH) {
                     OutlinedButton(
                         onClick = { onOpenSftp(profile) },
-                        shape = RoundedCornerShape(10.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
-                        Icon(Icons.Default.Folder, contentDescription = null)
+                        Icon(
+                            Icons.Default.Folder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                        )
                         Spacer(Modifier.width(4.dp))
                         Text("SFTP")
                     }
