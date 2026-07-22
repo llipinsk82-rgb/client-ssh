@@ -71,11 +71,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val SftpBackground = Color(0xFF07100D)
+private val SftpBackground = Color(0xFF050A08)
 private val SftpPanel = Color(0xFF101A16)
+private val SftpPanelDeep = Color(0xFF0B120F)
 private val SftpRow = Color(0xFF0D1713)
-private val SftpStroke = Color(0xFF26372F)
+private val SftpStroke = Color(0xFF2F4339)
+private val SftpHighlight = Color(0xFF526A5C)
 private val SftpAccent = Color(0xFF62D58A)
+private val SftpAmber = Color(0xFFD9A441)
 private val SftpMuted = Color(0xFFA7B5AD)
 private val SftpDanger = Color(0xFFE88989)
 
@@ -197,7 +200,7 @@ fun SftpScreen(profile: HostProfile, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF0A1511),
+                    containerColor = Color(0xFF07100D),
                     titleContentColor = Color(0xFFE6F0EA),
                     navigationIconContentColor = SftpAccent,
                     actionIconContentColor = SftpAccent,
@@ -236,6 +239,7 @@ fun SftpScreen(profile: HostProfile, onBack: () -> Unit) {
                 .padding(padding)
                 .background(SftpBackground),
         ) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(SftpHighlight.copy(alpha = 0.45f)))
             SftpCommanderHeader(
                 status = status,
                 path = path,
@@ -342,23 +346,36 @@ private fun SftpCommanderHeader(
     onRefresh: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp),
         color = SftpPanel,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
+        tonalElevation = 3.dp,
+        shadowElevation = 8.dp,
         border = BorderStroke(1.dp, SftpStroke),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(status, color = Color(0xFFE6F0EA), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(path, color = SftpMuted, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(SftpHighlight.copy(alpha = 0.55f)))
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(status, color = Color(0xFFE6F0EA), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(path, color = SftpMuted, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                TextButton(
+                    enabled = !busy && path != "/",
+                    onClick = onParent,
+                    colors = ButtonDefaults.textButtonColors(contentColor = SftpAccent),
+                ) { Text("..") }
+                TextButton(
+                    enabled = !busy,
+                    onClick = onRefresh,
+                    colors = ButtonDefaults.textButtonColors(contentColor = SftpAccent),
+                ) { Text("R") }
             }
-            TextButton(enabled = !busy && path != "/", onClick = onParent) { Text("..") }
-            TextButton(enabled = !busy, onClick = onRefresh) { Text("R") }
         }
     }
 }
@@ -378,17 +395,25 @@ private fun SftpCompactRow(
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp),
         color = SftpRow,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, SftpStroke.copy(alpha = 0.65f)),
+        shape = RoundedCornerShape(10.dp),
+        tonalElevation = 2.dp,
+        shadowElevation = 4.dp,
+        border = BorderStroke(1.dp, SftpStroke.copy(alpha = 0.78f)),
     ) {
         Row(
             modifier = Modifier
-                .height(46.dp)
+                .height(48.dp)
                 .clickable(enabled = !busy) { if (entry.isDirectory) onOpen() else onDownload() }
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Box(
+                modifier = Modifier
+                    .width(2.dp)
+                    .height(30.dp)
+                    .background(if (entry.isDirectory) SftpAccent else SftpAmber, RoundedCornerShape(4.dp)),
+            )
             Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -407,8 +432,14 @@ private fun SftpCompactRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            IconButton(enabled = !busy, onClick = onActions, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Akcje", tint = SftpMuted)
+            Surface(
+                color = SftpPanelDeep,
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, SftpStroke.copy(alpha = 0.65f)),
+            ) {
+                IconButton(enabled = !busy, onClick = onActions, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Akcje", tint = SftpMuted)
+                }
             }
         }
     }
