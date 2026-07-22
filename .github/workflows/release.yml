@@ -46,11 +46,15 @@ jobs:
           cat > release-notes.md <<EOF
           Client SSH $VERSION
 
-          - OTA pobiera listę GitHub Releases i wybiera najnowsze wydanie nowsze od zainstalowanej wersji,
-          - OTA preferuje podpisany plik release APK zamiast debug APK,
-          - pobrany APK jest weryfikowany sumą SHA-256 z assetu release,
-          - komunikaty OTA są czytelniejsze: brak release, brak uprawnień instalacji, błąd pobierania albo instalator uruchomiony,
-          - instalator Androida uruchamiany jest dopiero po pobraniu i sprawdzeniu pliku.
+          - realny ekran SFTP dla profili SSH,
+          - logowanie SFTP tym samym hasłem albo kluczem co terminal,
+          - przeglądanie katalogów i przechodzenie wyżej,
+          - odświeżanie listy plików,
+          - pobieranie plików przez systemowy wybór miejsca zapisu Androida,
+          - wysyłanie plików przez systemowy picker Androida,
+          - tworzenie katalogów,
+          - zmiana nazwy plików i katalogów,
+          - usuwanie plików i pustych katalogów po potwierdzeniu.
           EOF
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
