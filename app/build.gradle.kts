@@ -75,6 +75,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.github.mwiede:jsch:2.28.2")
+    // JSch uses Bouncy Castle for Ed25519 and encrypted PuTTY PPK v3 keys on Android.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.84")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.12.00")
     implementation(composeBom)
