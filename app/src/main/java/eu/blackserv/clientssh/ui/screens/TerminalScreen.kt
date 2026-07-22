@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.model.TextWrapMode
 import eu.blackserv.clientssh.terminal.TerminalConnectionState
 import eu.blackserv.clientssh.terminal.TerminalSessionBus
@@ -77,6 +79,8 @@ private data class TerminalShortcut(
 fun TerminalScreen(
     profile: HostProfile,
     favorites: List<FavoriteCommand>,
+    terminalSettings: TerminalSettings,
+    onTerminalSettingsChange: (TerminalSettings) -> Unit,
     onSaveFavorite: (FavoriteCommand) -> Unit,
     onDeleteFavorite: (FavoriteCommand) -> Unit,
     onMoveFavoriteUp: (FavoriteCommand) -> Unit,
@@ -84,6 +88,7 @@ fun TerminalScreen(
     onSaveLog: (String, String) -> Unit,
     onClose: () -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
+    onKeepScreenAwakeChange: (Boolean) -> Unit,
 ) {
     val session by TerminalSessionBus.snapshot.collectAsState()
     var fullscreen by remember { mutableStateOf(false) }
@@ -101,6 +106,12 @@ fun TerminalScreen(
 
     LaunchedEffect(plainOutput.length) { verticalScroll.scrollTo(verticalScroll.maxValue) }
     LaunchedEffect(fullscreen) { onFullscreenChange(fullscreen) }
+    LaunchedEffect(terminalSettings.keepScreenAwake, controlsEnabled) {
+        onKeepScreenAwakeChange(terminalSettings.keepScreenAwake && controlsEnabled)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onKeepScreenAwakeChange(false) }
+    }
     LaunchedEffect(session.profileId, session.state) {
         if (session.profileId != profile.id) return@LaunchedEffect
         when (session.state) {
@@ -108,6 +119,7 @@ fun TerminalScreen(
             TerminalConnectionState.DISCONNECTED -> if (connectedOnce) {
                 delay(750)
                 onFullscreenChange(false)
+                onKeepScreenAwakeChange(false)
                 onClose()
             }
             else -> Unit
@@ -131,7 +143,6 @@ fun TerminalScreen(
     }
 
     val shortcuts = buildList {
-        add(TerminalShortcut("clear", controlsEnabled) { sendCommand("clear") })
         favorites.forEach { favorite ->
             add(
                 TerminalShortcut(favorite.name, controlsEnabled) {
@@ -148,7 +159,6 @@ fun TerminalScreen(
         add(TerminalShortcut("←", controlsEnabled) { sendRaw("\u001B[D") })
         add(TerminalShortcut("→", controlsEnabled) { sendRaw("\u001B[C") })
         add(TerminalShortcut("ESC", controlsEnabled) { sendRaw(byteArrayOf(27)) })
-        add(TerminalShortcut("sudo -i", controlsEnabled) { sendCommand("sudo -i") })
         add(TerminalShortcut("BUF CLEAR", true) { TerminalSessionBus.clearLocalBuffer() })
     }
 
@@ -159,6 +169,17 @@ fun TerminalScreen(
                     title = { Text(profile.name) },
                     navigationIcon = { TextButton(onClick = onClose) { Text("Wstecz") } },
                     actions = {
+                        TextButton(
+                            onClick = {
+                                onTerminalSettingsChange(
+                                    terminalSettings.copy(
+                                        keepScreenAwake = !terminalSettings.keepScreenAwake,
+                                    ),
+                                )
+                            },
+                        ) {
+                            Text(if (terminalSettings.keepScreenAwake) "Ekran ON" else "Ekran OFF")
+                        }
                         IconButton(onClick = { showHealth = !showHealth }) {
                             Icon(Icons.Default.HealthAndSafety, contentDescription = "Health")
                         }
