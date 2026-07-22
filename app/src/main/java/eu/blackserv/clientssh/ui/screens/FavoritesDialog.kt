@@ -27,8 +27,6 @@ import eu.blackserv.clientssh.model.FavoriteCommand
 fun FavoritesDialog(
     favorites: List<FavoriteCommand>,
     onDismiss: () -> Unit,
-    onInsert: (FavoriteCommand) -> Unit,
-    onRun: (FavoriteCommand) -> Unit,
     onSave: (FavoriteCommand) -> Unit,
     onDelete: (FavoriteCommand) -> Unit,
     onMoveUp: (FavoriteCommand) -> Unit,
@@ -51,14 +49,6 @@ fun FavoritesDialog(
                         ) {
                             Text(favorite.name)
                             Text(favorite.command)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                TextButton(onClick = { onInsert(favorite) }) { Text("Wstaw") }
-                                TextButton(onClick = { onRun(favorite) }) { Text("Uruchom") }
-                                Spacer(Modifier.weight(1f))
-                            }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
