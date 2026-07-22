@@ -33,6 +33,15 @@ data class FavoriteCommand(
     val runImmediately: Boolean = false,
 )
 
+data class TerminalSettings(
+    val keepScreenAwake: Boolean = true,
+)
+
+fun defaultFavoriteCommands(): List<FavoriteCommand> = listOf(
+    FavoriteCommand(name = "clear", command = "clear", runImmediately = true),
+    FavoriteCommand(name = "sudo -i", command = "sudo -i", runImmediately = true),
+)
+
 enum class TextWrapMode(val label: String) {
     WRAP("Zawijaj"),
     NO_WRAP("Bez zawijania"),
