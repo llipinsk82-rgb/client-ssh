@@ -4,6 +4,8 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import eu.blackserv.clientssh.model.AppSettings
+import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.AuthenticationMethod
 import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.FavoriteCommand
@@ -72,6 +74,19 @@ class LocalAppStore(context: Context) {
             runCatching { array.put(favorite.toJson()) }
         }
         prefs.edit().putString(KEY_FAVORITES, array.toString()).commit()
+    }
+
+    fun loadAppSettings(): AppSettings = AppSettings(
+        skin = enumValueOrDefault(
+            prefs.getString(KEY_APP_SKIN, AppSkin.GRAPHITE.name).orEmpty(),
+            AppSkin.GRAPHITE,
+        ),
+    )
+
+    fun saveAppSettings(settings: AppSettings) {
+        prefs.edit()
+            .putString(KEY_APP_SKIN, settings.skin.name)
+            .commit()
     }
 
     fun loadTerminalSettings(): TerminalSettings = TerminalSettings(
@@ -174,6 +189,7 @@ class LocalAppStore(context: Context) {
         private const val KEY_PROFILES = "profiles"
         private const val KEY_PROFILES_BACKUP = "profiles_backup"
         private const val KEY_FAVORITES = "favorites"
+        private const val KEY_APP_SKIN = "app_skin"
         private const val KEY_KEEP_SCREEN_AWAKE = "keep_screen_awake"
         private const val KEY_ALIAS = "blackserv-client-ssh-secrets"
         private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
