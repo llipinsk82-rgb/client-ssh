@@ -3,19 +3,13 @@ package eu.blackserv.clientssh.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,7 +45,10 @@ fun FavoritesDialog(
                 if (favorites.isEmpty()) Text("Nie masz jeszcze ulubionych komend.")
                 favorites.forEachIndexed { index, favorite ->
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
                             Text(favorite.name)
                             Text(favorite.command)
                             Row(
@@ -60,25 +57,29 @@ fun FavoritesDialog(
                             ) {
                                 TextButton(onClick = { onInsert(favorite) }) { Text("Wstaw") }
                                 TextButton(onClick = { onRun(favorite) }) { Text("Uruchom") }
-                                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-                                IconButton(
+                                Spacer(Modifier.weight(1f))
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                TextButton(
                                     enabled = index > 0,
                                     onClick = { onMoveUp(favorite) },
-                                ) {
-                                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Przesuń wyżej")
-                                }
-                                IconButton(
+                                ) { Text("↑ Wyżej") }
+                                TextButton(
                                     enabled = index < favorites.lastIndex,
                                     onClick = { onMoveDown(favorite) },
-                                ) {
-                                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Przesuń niżej")
-                                }
-                                IconButton(onClick = { edited = favorite }) {
-                                    Icon(Icons.Default.Edit, contentDescription = "Edytuj")
-                                }
-                                IconButton(onClick = { onDelete(favorite) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Usuń")
-                                }
+                                ) { Text("↓ Niżej") }
+                                Spacer(Modifier.weight(1f))
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                TextButton(onClick = { edited = favorite }) { Text("Edytuj") }
+                                TextButton(onClick = { onDelete(favorite) }) { Text("Usuń") }
+                                Spacer(Modifier.weight(1f))
                             }
                         }
                     }
