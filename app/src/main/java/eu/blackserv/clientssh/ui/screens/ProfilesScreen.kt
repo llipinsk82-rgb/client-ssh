@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -220,7 +219,7 @@ private fun ActiveSessionCard(
                     onClick = onDisconnect,
                     shape = RoundedCornerShape(10.dp),
                 ) {
-                    Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = DangerRed)
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = DangerRed)
                     Spacer(Modifier.width(4.dp))
                     Text("Rozłącz", color = DangerRed)
                 }
