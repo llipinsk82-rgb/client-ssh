@@ -1,5 +1,16 @@
 # Historia wydań Client SSH
 
+## 0.3.2
+
+Cel: Session Keeper — utrzymanie terminala SSH po wyjściu z ekranu aplikacji, ale jawnie, z powiadomieniem i kontrolą rozłączenia.
+
+- Terminal SSH nie rozłącza się po zwykłym wyjściu z ekranu przez `Wstecz`.
+- Sesja działa dalej w foreground service.
+- Powiadomienie pokazuje `Client SSH działa w tle`.
+- Powiadomienie ma akcję `Rozłącz`.
+- Dotknięcie powiadomienia otwiera aplikację z intencją powrotu do aktywnej sesji.
+- SFTP bez zmian: rozłącza się po wyjściu z ekranu SFTP.
+
 ## 0.3.1
 
 Cel: drugi, właściwy pass wyglądu po uwadze, że 0.3.0 zmieniło głównie kolory, a nie dało jeszcze efektu premium.
