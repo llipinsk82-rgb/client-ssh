@@ -11,6 +11,7 @@ import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.model.defaultFavoriteCommands
 import java.security.KeyStore
+import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -22,39 +23,55 @@ class LocalAppStore(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun loadProfiles(): List<HostProfile> = runCatching {
-        val raw = prefs.getString(KEY_PROFILES, "[]").orEmpty()
-        val array = JSONArray(raw)
-        buildList {
+    fun loadProfiles(): List<HostProfile> =
+        loadProfilesFrom(KEY_PROFILES).ifEmpty { loadProfilesFrom(KEY_PROFILES_BACKUP) }
+
+    private fun loadProfilesFrom(key: String): List<HostProfile> {
+        val raw = prefs.getString(key, "[]").orEmpty()
+        val array = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
+        return buildList {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
-                add(item.toHostProfile())
+                runCatching { item.toHostProfile() }
+                    .getOrNull()
+                    ?.let { add(it) }
             }
         }
-    }.getOrElse { emptyList() }
+    }
 
     fun saveProfiles(profiles: List<HostProfile>) {
         val array = JSONArray()
-        profiles.forEach { array.put(it.toJson()) }
-        prefs.edit().putString(KEY_PROFILES, array.toString()).apply()
+        profiles.forEach { profile ->
+            runCatching { array.put(profile.toJson()) }
+        }
+        val raw = array.toString()
+        prefs.edit()
+            .putString(KEY_PROFILES, raw)
+            .putString(KEY_PROFILES_BACKUP, raw)
+            .commit()
     }
 
-    fun loadFavorites(): List<FavoriteCommand> = runCatching {
-        if (!prefs.contains(KEY_FAVORITES)) return@runCatching defaultFavoriteCommands()
+    fun loadFavorites(): List<FavoriteCommand> {
+        if (!prefs.contains(KEY_FAVORITES)) return defaultFavoriteCommands()
         val raw = prefs.getString(KEY_FAVORITES, "[]").orEmpty()
-        val array = JSONArray(raw)
-        buildList {
+        val array = runCatching { JSONArray(raw) }.getOrNull() ?: return defaultFavoriteCommands()
+        val loaded = buildList {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
-                add(item.toFavoriteCommand())
+                runCatching { item.toFavoriteCommand() }
+                    .getOrNull()
+                    ?.let { add(it) }
             }
         }
-    }.getOrElse { defaultFavoriteCommands() }
+        return loaded.ifEmpty { defaultFavoriteCommands() }
+    }
 
     fun saveFavorites(favorites: List<FavoriteCommand>) {
         val array = JSONArray()
-        favorites.forEach { array.put(it.toJson()) }
-        prefs.edit().putString(KEY_FAVORITES, array.toString()).apply()
+        favorites.forEach { favorite ->
+            runCatching { array.put(favorite.toJson()) }
+        }
+        prefs.edit().putString(KEY_FAVORITES, array.toString()).commit()
     }
 
     fun loadTerminalSettings(): TerminalSettings = TerminalSettings(
@@ -64,15 +81,15 @@ class LocalAppStore(context: Context) {
     fun saveTerminalSettings(settings: TerminalSettings) {
         prefs.edit()
             .putBoolean(KEY_KEEP_SCREEN_AWAKE, settings.keepScreenAwake)
-            .apply()
+            .commit()
     }
 
     private fun HostProfile.toJson(): JSONObject = JSONObject()
         .put("id", id)
         .put("name", name)
-        .put("host", host)
+        .put("host", host.trim())
         .put("port", port)
-        .put("username", username)
+        .put("username", username.trim())
         .put("protocol", protocol.name)
         .put("authenticationMethod", authenticationMethod.name)
         .put("password", encryptOrBlank(password))
@@ -80,11 +97,11 @@ class LocalAppStore(context: Context) {
         .put("privateKeyPassphrase", encryptOrBlank(privateKeyPassphrase))
 
     private fun JSONObject.toHostProfile(): HostProfile = HostProfile(
-        id = optString("id"),
-        name = optString("name"),
-        host = optString("host"),
+        id = optString("id").ifBlank { UUID.randomUUID().toString() },
+        name = optString("name").trim(),
+        host = optString("host").trim(),
         port = optInt("port", ConnectionProtocol.SSH.defaultPort),
-        username = optString("username"),
+        username = optString("username").trim(),
         protocol = enumValueOrDefault(optString("protocol"), ConnectionProtocol.SSH),
         authenticationMethod = enumValueOrDefault(optString("authenticationMethod"), AuthenticationMethod.PASSWORD),
         password = decryptOrBlank(optString("password")),
@@ -94,19 +111,19 @@ class LocalAppStore(context: Context) {
 
     private fun FavoriteCommand.toJson(): JSONObject = JSONObject()
         .put("id", id)
-        .put("name", name)
+        .put("name", name.trim())
         .put("command", command)
         .put("runImmediately", runImmediately)
 
     private fun JSONObject.toFavoriteCommand(): FavoriteCommand = FavoriteCommand(
-        id = optString("id"),
-        name = optString("name"),
+        id = optString("id").ifBlank { UUID.randomUUID().toString() },
+        name = optString("name").trim(),
         command = optString("command"),
         runImmediately = optBoolean("runImmediately", false),
     )
 
     private fun encryptOrBlank(value: String): String =
-        if (value.isBlank()) "" else encrypt(value)
+        if (value.isBlank()) "" else runCatching { encrypt(value) }.getOrDefault("")
 
     private fun decryptOrBlank(value: String): String =
         if (value.isBlank()) "" else runCatching { decrypt(value) }.getOrDefault("")
@@ -155,6 +172,7 @@ class LocalAppStore(context: Context) {
     companion object {
         private const val PREFS_NAME = "client_ssh_store"
         private const val KEY_PROFILES = "profiles"
+        private const val KEY_PROFILES_BACKUP = "profiles_backup"
         private const val KEY_FAVORITES = "favorites"
         private const val KEY_KEEP_SCREEN_AWAKE = "keep_screen_awake"
         private const val KEY_ALIAS = "blackserv-client-ssh-secrets"

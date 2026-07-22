@@ -46,12 +46,12 @@ jobs:
           cat > release-notes.md <<EOF
           Client SSH $VERSION
 
-          - trwały zapis profili hostów po restarcie i aktualizacji,
-          - trwały zapis ulubionych komend oraz ich kolejności,
-          - sekrety profili są zapisywane przez Android Keystore,
-          - gotowe komendy `clear` i `sudo -i` są zwykłymi edytowalnymi ulubionymi komendami,
-          - dodany przełącznik `Ekran ON/OFF`, żeby terminal nie wygaszał ekranu podczas długich komend,
-          - podpis APK pozostaje stały, więc aktualizacje lecą z GitHub Releases bez odinstalowywania.
+          - zapis profili i ulubionych komend używa commit zamiast apply,
+          - dodany zapasowy zapis profili, żeby update nie kasował konfiguracji,
+          - odporniejsze wczytywanie profili po błędzie sekretu/Keystore,
+          - przełącznik niewygaszania ekranu jest małą ikoną i nie nachodzi na Wstecz,
+          - host i użytkownik SSH są czyszczone ze spacji przed połączeniem,
+          - czytelniejszy komunikat DNS / UnknownHostException.
           EOF
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
