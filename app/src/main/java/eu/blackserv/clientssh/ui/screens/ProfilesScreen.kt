@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.item
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,7 +21,6 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -51,23 +49,16 @@ import eu.blackserv.clientssh.BuildConfig
 import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.HostProfile
 
-private val ScreenBackground = Color(0xFF050A08)
-private val PanelColor = Color(0xFF0D1713)
-private val PanelColorDeep = Color(0xFF08110E)
-private val PanelStroke = Color(0xFF2C4437)
+private val ScreenBackground = Color(0xFF08100D)
+private val PanelColor = Color(0xFF101A16)
+private val PanelStroke = Color(0xFF26372F)
 private val AccentGreen = Color(0xFF62D58A)
-private val AccentAmber = Color(0xFFE0B35A)
 private val MutedText = Color(0xFFA7B5AD)
-private val DangerRed = Color(0xFFE88989)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfilesScreen(
     profiles: List<HostProfile>,
-    activeSessionName: String?,
-    activeSessionStatus: String?,
-    onResumeActiveSession: (() -> Unit)?,
-    onDisconnectActiveSession: () -> Unit,
     onAdd: () -> Unit,
     onEdit: (HostProfile) -> Unit,
     onClone: (HostProfile) -> Unit,
@@ -81,7 +72,7 @@ fun ProfilesScreen(
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF07100D),
+                    containerColor = Color(0xFF0A1511),
                     titleContentColor = Color(0xFFE6F0EA),
                     actionIconContentColor = AccentGreen,
                 ),
@@ -89,7 +80,7 @@ fun ProfilesScreen(
                     Column {
                         Text("Client SSH", fontWeight = FontWeight.Bold)
                         Text(
-                            "BlackServ command deck • v${BuildConfig.VERSION_NAME}",
+                            "BlackServ • v${BuildConfig.VERSION_NAME}",
                             color = MutedText,
                             style = MaterialTheme.typography.labelSmall,
                         )
@@ -112,7 +103,7 @@ fun ProfilesScreen(
             }
         },
     ) { padding ->
-        if (profiles.isEmpty() && activeSessionName == null) {
+        if (profiles.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
                 contentAlignment = Alignment.Center,
@@ -120,8 +111,7 @@ fun ProfilesScreen(
                 Surface(
                     color = PanelColor,
                     shape = RoundedCornerShape(18.dp),
-                    tonalElevation = 8.dp,
-                    shadowElevation = 12.dp,
+                    tonalElevation = 2.dp,
                     border = androidx.compose.foundation.BorderStroke(1.dp, PanelStroke),
                 ) {
                     Column(
@@ -151,16 +141,6 @@ fun ProfilesScreen(
                 contentPadding = PaddingValues(10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (activeSessionName != null) {
-                    item {
-                        ActiveSessionCard(
-                            name = activeSessionName,
-                            status = activeSessionStatus.orEmpty(),
-                            onResume = onResumeActiveSession,
-                            onDisconnect = onDisconnectActiveSession,
-                        )
-                    }
-                }
                 items(profiles, key = { it.id }) { profile ->
                     HostProfileRow(
                         profile = profile,
@@ -170,58 +150,6 @@ fun ProfilesScreen(
                         onEdit = onEdit,
                         onDelete = onDelete,
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ActiveSessionCard(
-    name: String,
-    status: String,
-    onResume: (() -> Unit)?,
-    onDisconnect: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = PanelColorDeep,
-        shape = RoundedCornerShape(16.dp),
-        tonalElevation = 8.dp,
-        shadowElevation = 14.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, AccentGreen.copy(alpha = 0.55f)),
-    ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("●", color = AccentGreen)
-                Spacer(Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Sesja działa w tle", color = AccentGreen, fontWeight = FontWeight.Bold)
-                    Text("$name • $status", color = MutedText, fontFamily = FontFamily.Monospace)
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(
-                    enabled = onResume != null,
-                    onClick = { onResume?.invoke() },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentGreen,
-                        contentColor = Color(0xFF06120B),
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Wróć")
-                }
-                OutlinedButton(
-                    onClick = onDisconnect,
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = DangerRed)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Rozłącz", color = DangerRed)
                 }
             }
         }
@@ -242,7 +170,6 @@ private fun HostProfileRow(
         colors = CardDefaults.cardColors(containerColor = PanelColor),
         border = androidx.compose.foundation.BorderStroke(1.dp, PanelStroke),
         shape = RoundedCornerShape(14.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -263,7 +190,7 @@ private fun HostProfileRow(
                     Icon(Icons.Default.Edit, contentDescription = "Edytuj", tint = MutedText)
                 }
                 IconButton(onClick = { onDelete(profile) }) {
-                    Icon(Icons.Default.Delete, contentDescription = "Usuń", tint = DangerRed)
+                    Icon(Icons.Default.Delete, contentDescription = "Usuń", tint = Color(0xFFE88989))
                 }
             }
             Row(
@@ -286,7 +213,7 @@ private fun HostProfileRow(
                         onClick = { onOpenSftp(profile) },
                         shape = RoundedCornerShape(10.dp),
                     ) {
-                        Icon(Icons.Default.Folder, contentDescription = null, tint = AccentAmber)
+                        Icon(Icons.Default.Folder, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
                         Text("SFTP")
                     }
