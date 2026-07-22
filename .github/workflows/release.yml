@@ -46,11 +46,12 @@ jobs:
           cat > release-notes.md <<EOF
           Client SSH $VERSION
 
-          - przycisk niewygaszania ekranu przeniesiony z górnej belki na dolny pasek skrótów,
-          - górna belka nie zasłania już przycisku Wstecz na małym ekranie,
-          - w ulubionych komendach dodany widoczny przycisk Usuń,
-          - układ akcji ulubionych rozbity na wiersze: Wstaw/Uruchom, góra/dół, Edytuj/Usuń,
-          - SFTP i Health Monitor nadal są etapem kolejnym, nie są jeszcze realnym modułem.
+          - odchudzone okno ulubionych: usunięto akcje Wstaw i Uruchom,
+          - przełącznik niewygaszania ekranu przeniesiony do paska statusu po prawej stronie adresu hosta,
+          - usunięto przycisk EKRAN ON/OFF z dolnego paska skrótów,
+          - dodano klonowanie profilu hosta z ekranu listy profili,
+          - klon otwiera edytor, więc można szybko zmienić tylko port albo nazwę,
+          - SFTP i Health Monitor nadal są etapem kolejnym.
           EOF
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
