@@ -2,6 +2,20 @@ package eu.blackserv.clientssh.terminal
 
 import com.jcraft.jsch.JSch
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.Base64
+
+data class PrivateKeyInfo(
+    val algorithm: String,
+    val fingerprint: String,
+    val comment: String?,
+) {
+    val suggestedUsername: String?
+        get() = comment
+            ?.substringBefore('@')
+            ?.trim()
+            ?.takeIf { it.matches(Regex("[A-Za-z0-9._-]+")) }
+}
 
 fun String.normalizePrivateKeyText(): String =
     replace("\r\n", "\n")
@@ -9,26 +23,49 @@ fun String.normalizePrivateKeyText(): String =
         .trim()
         .plus("\n")
 
-fun validatePrivateKeyMaterial(keyText: String, passphrase: String): String? {
+fun inspectPrivateKeyMaterial(keyText: String, passphrase: String): Result<PrivateKeyInfo> = runCatching {
     val normalized = keyText.normalizePrivateKeyText()
     val firstLine = normalized.lineSequence().firstOrNull().orEmpty()
     val looksLikePutty = firstLine.startsWith("PuTTY-User-Key-File-", ignoreCase = true)
     val looksLikePemOrOpenSsh = normalized.contains("PRIVATE KEY")
 
-    if (!looksLikePutty && !looksLikePemOrOpenSsh) {
-        return "Plik nie wygląda jak prywatny klucz SSH, OpenSSH ani PuTTY PPK."
+    require(looksLikePutty || looksLikePemOrOpenSsh) {
+        "Plik nie wygląda jak prywatny klucz SSH, OpenSSH ani PuTTY PPK."
     }
 
-    return runCatching {
-        val jsch = JSch()
+    val jsch = JSch()
+    try {
         jsch.addIdentity(
             "validation",
             normalized.toByteArray(StandardCharsets.UTF_8),
             null,
             passphrase.takeIf(String::isNotEmpty)?.toByteArray(StandardCharsets.UTF_8),
         )
+
+        val identity = jsch.identityRepository.identities.firstOrNull()
+            ?: error("Nie udało się odczytać tożsamości z klucza.")
+        val publicKey = identity.publicKeyBlob
+            ?: error("Klucz nie zawiera części publicznej potrzebnej do uwierzytelnienia.")
+        val digest = MessageDigest.getInstance("SHA-256").digest(publicKey)
+        val fingerprint = Base64.getEncoder().withoutPadding().encodeToString(digest)
+        val comment = normalized.lineSequence()
+            .firstOrNull { it.startsWith("Comment:", ignoreCase = true) }
+            ?.substringAfter(':')
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+
+        PrivateKeyInfo(
+            algorithm = identity.algName.ifBlank { "SSH" },
+            fingerprint = "SHA256:$fingerprint",
+            comment = comment,
+        )
+    } finally {
         jsch.removeAllIdentity()
-    }.exceptionOrNull()?.let { error ->
+    }
+}
+
+fun validatePrivateKeyMaterial(keyText: String, passphrase: String): String? =
+    inspectPrivateKeyMaterial(keyText, passphrase).exceptionOrNull()?.let { error ->
         val message = error.message.orEmpty()
         when {
             message.contains("passphrase", ignoreCase = true) ||
@@ -39,4 +76,3 @@ fun validatePrivateKeyMaterial(keyText: String, passphrase: String): String? {
             else -> message.ifBlank { "Nie udało się odczytać klucza prywatnego." }
         }
     }
-}
