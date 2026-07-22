@@ -87,7 +87,12 @@ class TerminalSessionService : Service() {
 
     private suspend fun runSsh(profile: HostProfile) {
         val jsch = JSch()
+        val host = profile.host.trim()
+        val username = profile.username.trim()
         try {
+            if (host.isBlank()) error("Host jest pusty. Edytuj profil i wpisz domenę albo IP.")
+            if (username.isBlank()) error("Użytkownik SSH jest pusty. Edytuj profil i wpisz login.")
+
             val knownHosts = File(filesDir, "ssh/known_hosts")
             knownHosts.parentFile?.mkdirs()
             if (!knownHosts.exists()) knownHosts.createNewFile()
@@ -105,7 +110,7 @@ class TerminalSessionService : Service() {
                 )
             }
 
-            val session = jsch.getSession(profile.username, profile.host, profile.port).apply {
+            val session = jsch.getSession(username, host, profile.port).apply {
                 if (profile.authenticationMethod == AuthenticationMethod.PASSWORD) {
                     setPassword(profile.password)
                 }
@@ -141,11 +146,11 @@ class TerminalSessionService : Service() {
                             output.flush()
                         }
                     }.onFailure { error ->
-                        TerminalSessionBus.markError(error.readableMessage())
+                        TerminalSessionBus.markError(error.readableMessage(host))
                     }
                 }
             }
-            TerminalSessionBus.markConnected("SSH • ${profile.host}:${profile.port}")
+            TerminalSessionBus.markConnected("SSH • $host:${profile.port}")
             updateNotification(profile.name, "Połączono przez SSH")
 
             val buffer = ByteArray(8 * 1024)
@@ -161,7 +166,7 @@ class TerminalSessionService : Service() {
         } catch (_: CancellationException) {
             throw CancellationException()
         } catch (error: Throwable) {
-            TerminalSessionBus.markError(error.readableMessage())
+            TerminalSessionBus.markError(error.readableMessage(host))
         } finally {
             TerminalSessionBus.detachWriter()
             closeTransport()
@@ -213,11 +218,14 @@ class TerminalSessionService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun Throwable.readableMessage(): String {
+    private fun Throwable.readableMessage(host: String): String {
         val raw = message?.trim().orEmpty()
         return when {
             raw.contains("Auth fail", ignoreCase = true) -> "Nieprawidłowy login, hasło lub klucz SSH."
             raw.contains("reject HostKey", ignoreCase = true) -> "Klucz hosta SSH zmienił się. Połączenie zostało zablokowane."
+            raw.contains("UnknownHostException", ignoreCase = true) ||
+                raw.contains("Unable to resolve host", ignoreCase = true) ->
+                "Nie można znaleźć hosta: $host. Sprawdź internet, DNS albo literówkę w profilu."
             raw.contains("timeout", ignoreCase = true) -> "Przekroczono czas oczekiwania na połączenie."
             raw.isNotEmpty() -> raw
             else -> javaClass.simpleName
