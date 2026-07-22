@@ -13,6 +13,24 @@ enum class AuthenticationMethod(val label: String) {
     INTERACTIVE("Ręcznie"),
 }
 
+enum class AppSkin(
+    val label: String,
+    val description: String,
+) {
+    GRAPHITE(
+        label = "BlackServ Graphite",
+        description = "Spokojny, techniczny wygląd z zielonym i bursztynowym akcentem.",
+    ),
+    NEON(
+        label = "BlackServ Neon",
+        description = "Ciemniejszy wygląd z mocniejszą zielenią, cyanem i efektem command deck.",
+    ),
+}
+
+data class AppSettings(
+    val skin: AppSkin = AppSkin.GRAPHITE,
+)
+
 data class HostProfile(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
