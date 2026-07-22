@@ -46,10 +46,12 @@ jobs:
           cat > release-notes.md <<EOF
           Client SSH $VERSION
 
-          - poprawione czyszczenie terminala,
-          - import kluczy przez wklejenie lub wybór dowolnego pliku, w tym PuTTY PPK,
-          - stabilny podpis APK umożliwiający kolejne aktualizacje bez odinstalowywania,
-          - aktualizacje pobierane bezpośrednio z GitHub Releases.
+          - usunięte fałszywe linie promptu z sekwencji OSC,
+          - kolorowy terminal z obsługą podstawowych kolorów ANSI,
+          - `clear` przeniesiony na początek paska skrótów,
+          - ulubione komendy można przesuwać góra/dół i pojawiają się przed Enter,
+          - `Ctrl+D` / `exit` zamyka ekran terminala po zakończeniu powłoki,
+          - podpis APK pozostaje stały, więc aktualizacje lecą z GitHub Releases bez odinstalowywania.
           EOF
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
