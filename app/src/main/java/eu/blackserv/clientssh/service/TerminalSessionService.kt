@@ -38,6 +38,7 @@ class TerminalSessionService : Service() {
     private var sshSession: Session? = null
     private var shellChannel: ChannelShell? = null
     private var shellOutput: OutputStream? = null
+    private var activeProfile: HostProfile? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -45,12 +46,19 @@ class TerminalSessionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_DISCONNECT) {
+            disconnectFromNotification()
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
         val profileId = intent?.getStringExtra(EXTRA_PROFILE_ID).orEmpty()
         val profile = PendingSessionRegistry.get(profileId)
+        activeProfile = profile
 
         startForeground(
             NOTIFICATION_ID,
-            createNotification(profile?.name.orEmpty().ifBlank { "Terminal" }, "Łączenie…"),
+            createNotification(profile?.name.orEmpty().ifBlank { "Terminal" }, "Łączenie…", profile?.id),
         )
 
         if (profile == null) {
@@ -80,6 +88,7 @@ class TerminalSessionService : Service() {
         if (TerminalSessionBus.snapshot.value.state == TerminalConnectionState.CONNECTED) {
             TerminalSessionBus.markDisconnected("Sesja zamknięta")
         }
+        activeProfile?.id?.let { PendingSessionRegistry.remove(it) }
         super.onDestroy()
     }
 
@@ -151,7 +160,7 @@ class TerminalSessionService : Service() {
                 }
             }
             TerminalSessionBus.markConnected("SSH • $host:${profile.port}")
-            updateNotification(profile.name, "Połączono przez SSH")
+            updateNotification(profile.name, "SSH działa w tle — dotknij, żeby wrócić", profile.id)
 
             val buffer = ByteArray(8 * 1024)
             while (serviceScope.isActive && channel.isConnected) {
@@ -172,7 +181,17 @@ class TerminalSessionService : Service() {
             closeTransport()
             jsch.removeAllIdentity()
             PendingSessionRegistry.remove(profile.id)
+            activeProfile = null
         }
+    }
+
+    private fun disconnectFromNotification() {
+        val profile = activeProfile
+        connectionJob?.cancel()
+        closeTransport()
+        TerminalSessionBus.markDisconnected("Rozłączono z powiadomienia")
+        profile?.id?.let { PendingSessionRegistry.remove(it) }
+        activeProfile = null
     }
 
     private fun closeTransport() {
@@ -183,27 +202,46 @@ class TerminalSessionService : Service() {
         sshSession = null
     }
 
-    private fun createNotification(profileName: String, status: String): Notification {
+    private fun createNotification(profileName: String, status: String, profileId: String?): Notification {
+        val openIntent = Intent(this, MainActivity::class.java)
+            .setAction(MainActivity.ACTION_OPEN_ACTIVE_TERMINAL)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        if (profileId != null) openIntent.putExtra(EXTRA_PROFILE_ID, profileId)
+
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val disconnectIntent = Intent(this, TerminalSessionService::class.java)
+            .setAction(ACTION_DISCONNECT)
+        if (profileId != null) disconnectIntent.putExtra(EXTRA_PROFILE_ID, profileId)
+        val disconnectPendingIntent = PendingIntent.getService(
+            this,
+            1,
+            disconnectIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Aktywna sesja: $profileName")
-            .setContentText(status)
+            .setContentTitle("Client SSH działa w tle")
+            .setContentText("$profileName • $status")
             .setContentIntent(pendingIntent)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Rozłącz",
+                disconnectPendingIntent,
+            )
             .setOngoing(true)
             .setSilent(true)
             .build()
     }
 
-    private fun updateNotification(profileName: String, status: String) {
+    private fun updateNotification(profileName: String, status: String, profileId: String?) {
         getSystemService(NotificationManager::class.java).notify(
             NOTIFICATION_ID,
-            createNotification(profileName, status),
+            createNotification(profileName, status, profileId),
         )
     }
 
@@ -213,7 +251,7 @@ class TerminalSessionService : Service() {
             "Aktywne sesje terminala",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Utrzymuje połączenie SSH lub Telnet podczas blokady ekranu"
+            description = "Utrzymuje połączenie SSH lub Telnet podczas blokady ekranu i po wyjściu z aplikacji"
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
@@ -234,6 +272,7 @@ class TerminalSessionService : Service() {
 
     companion object {
         const val EXTRA_PROFILE_ID = "profile_id"
+        const val ACTION_DISCONNECT = "eu.blackserv.clientssh.action.DISCONNECT_SESSION"
         private const val CHANNEL_ID = "terminal_session"
         private const val NOTIFICATION_ID = 1001
         private const val CONNECT_TIMEOUT_MS = 15_000

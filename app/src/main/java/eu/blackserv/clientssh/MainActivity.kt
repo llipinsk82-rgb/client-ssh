@@ -96,6 +96,10 @@ class MainActivity : ComponentActivity() {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
+
+    companion object {
+        const val ACTION_OPEN_ACTIVE_TERMINAL = "eu.blackserv.clientssh.action.OPEN_ACTIVE_TERMINAL"
+    }
 }
 
 private sealed interface Destination {
@@ -189,7 +193,6 @@ private fun ClientSshApp(
             onClose = {
                 onFullscreenChange(false)
                 onKeepScreenAwakeChange(false)
-                onSessionStopped()
                 destination = Destination.Profiles
             },
             onFullscreenChange = onFullscreenChange,
