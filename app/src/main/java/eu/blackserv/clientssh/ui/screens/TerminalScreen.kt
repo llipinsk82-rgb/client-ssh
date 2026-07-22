@@ -166,10 +166,10 @@ fun TerminalScreen(
         topBar = {
             if (!fullscreen) {
                 TopAppBar(
-                    title = { Text(profile.name) },
+                    title = { Text(profile.name.take(12)) },
                     navigationIcon = { TextButton(onClick = onClose) { Text("Wstecz") } },
                     actions = {
-                        TextButton(
+                        IconButton(
                             onClick = {
                                 onTerminalSettingsChange(
                                     terminalSettings.copy(
@@ -178,7 +178,10 @@ fun TerminalScreen(
                                 )
                             },
                         ) {
-                            Text(if (terminalSettings.keepScreenAwake) "Ekran ON" else "Ekran OFF")
+                            Text(
+                                text = if (terminalSettings.keepScreenAwake) "☀" else "○",
+                                color = TerminalGreen,
+                            )
                         }
                         IconButton(onClick = { showHealth = !showHealth }) {
                             Icon(Icons.Default.HealthAndSafety, contentDescription = "Health")
