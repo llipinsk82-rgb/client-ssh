@@ -46,11 +46,11 @@ jobs:
           cat > release-notes.md <<EOF
           Client SSH $VERSION
 
-          - usunięte fałszywe linie promptu z sekwencji OSC,
-          - kolorowy terminal z obsługą podstawowych kolorów ANSI,
-          - `clear` przeniesiony na początek paska skrótów,
-          - ulubione komendy można przesuwać góra/dół i pojawiają się przed Enter,
-          - `Ctrl+D` / `exit` zamyka ekran terminala po zakończeniu powłoki,
+          - trwały zapis profili hostów po restarcie i aktualizacji,
+          - trwały zapis ulubionych komend oraz ich kolejności,
+          - sekrety profili są zapisywane przez Android Keystore,
+          - gotowe komendy `clear` i `sudo -i` są zwykłymi edytowalnymi ulubionymi komendami,
+          - dodany przełącznik `Ekran ON/OFF`, żeby terminal nie wygaszał ekranu podczas długich komend,
           - podpis APK pozostaje stały, więc aktualizacje lecą z GitHub Releases bez odinstalowywania.
           EOF
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"

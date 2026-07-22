@@ -2,6 +2,7 @@ package eu.blackserv.clientssh
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,7 +19,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.service.TerminalSessionService
+import eu.blackserv.clientssh.storage.LocalAppStore
 import eu.blackserv.clientssh.terminal.PendingSessionRegistry
 import eu.blackserv.clientssh.terminal.TerminalSessionBus
 import eu.blackserv.clientssh.ui.screens.ProfileEditorDialog
@@ -52,6 +55,7 @@ class MainActivity : ComponentActivity() {
                     onSessionStarted = ::startSessionService,
                     onSessionStopped = ::stopSessionService,
                     onFullscreenChange = ::setFullscreen,
+                    onKeepScreenAwakeChange = ::setKeepScreenAwake,
                     onSaveLog = { filename, content ->
                         pendingLogContent = content
                         saveLogLauncher.launch(filename.sanitizeFilename())
@@ -83,6 +87,14 @@ class MainActivity : ComponentActivity() {
             controller.show(WindowInsetsCompat.Type.systemBars())
         }
     }
+
+    private fun setKeepScreenAwake(enabled: Boolean) {
+        if (enabled) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
 }
 
 private sealed interface Destination {
@@ -96,15 +108,26 @@ private fun ClientSshApp(
     onSessionStarted: (HostProfile) -> Unit,
     onSessionStopped: () -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
+    onKeepScreenAwakeChange: (Boolean) -> Unit,
     onSaveLog: (String, String) -> Unit,
 ) {
     val context = LocalContext.current
-    val profiles = remember { mutableStateListOf<HostProfile>() }
-    val favorites = remember { mutableStateListOf<FavoriteCommand>() }
+    val appStore = remember(context.applicationContext) { LocalAppStore(context.applicationContext) }
+    val profiles = remember(appStore) { mutableStateListOf<HostProfile>().also { it.addAll(appStore.loadProfiles()) } }
+    val favorites = remember(appStore) { mutableStateListOf<FavoriteCommand>().also { it.addAll(appStore.loadFavorites()) } }
+    var terminalSettings by remember(appStore) { mutableStateOf(appStore.loadTerminalSettings()) }
     var destination by remember { mutableStateOf<Destination>(Destination.Profiles) }
     var editedProfile by remember { mutableStateOf<HostProfile?>(null) }
     var showProfileEditor by remember { mutableStateOf(false) }
     var showUpdater by remember { mutableStateOf(false) }
+
+    fun saveProfiles() = appStore.saveProfiles(profiles)
+    fun saveFavorites() = appStore.saveFavorites(favorites)
+
+    fun saveTerminalSettings(settings: TerminalSettings) {
+        terminalSettings = settings
+        appStore.saveTerminalSettings(settings)
+    }
 
     fun moveFavorite(favorite: FavoriteCommand, direction: Int) {
         val index = favorites.indexOfFirst { it.id == favorite.id }
@@ -112,6 +135,7 @@ private fun ClientSshApp(
         if (index < 0 || target !in favorites.indices) return
         val item = favorites.removeAt(index)
         favorites.add(target, item)
+        saveFavorites()
     }
 
     when (val current = destination) {
@@ -125,7 +149,10 @@ private fun ClientSshApp(
                 editedProfile = it
                 showProfileEditor = true
             },
-            onDelete = { profiles.remove(it) },
+            onDelete = {
+                profiles.remove(it)
+                saveProfiles()
+            },
             onConnect = {
                 onSessionStarted(it)
                 destination = Destination.Terminal(it)
@@ -137,20 +164,28 @@ private fun ClientSshApp(
         is Destination.Terminal -> TerminalScreen(
             profile = current.profile,
             favorites = favorites,
+            terminalSettings = terminalSettings,
+            onTerminalSettingsChange = ::saveTerminalSettings,
             onSaveFavorite = { updated ->
                 val index = favorites.indexOfFirst { it.id == updated.id }
                 if (index >= 0) favorites[index] = updated else favorites.add(updated)
+                saveFavorites()
             },
-            onDeleteFavorite = { favorites.remove(it) },
+            onDeleteFavorite = {
+                favorites.remove(it)
+                saveFavorites()
+            },
             onMoveFavoriteUp = { moveFavorite(it, -1) },
             onMoveFavoriteDown = { moveFavorite(it, 1) },
             onSaveLog = onSaveLog,
             onClose = {
                 onFullscreenChange(false)
+                onKeepScreenAwakeChange(false)
                 onSessionStopped()
                 destination = Destination.Profiles
             },
             onFullscreenChange = onFullscreenChange,
+            onKeepScreenAwakeChange = onKeepScreenAwakeChange,
         )
 
         is Destination.Sftp -> SftpScreen(
@@ -166,6 +201,7 @@ private fun ClientSshApp(
             onSave = { profile ->
                 val index = profiles.indexOfFirst { it.id == profile.id }
                 if (index >= 0) profiles[index] = profile else profiles.add(profile)
+                saveProfiles()
                 showProfileEditor = false
             },
         )
