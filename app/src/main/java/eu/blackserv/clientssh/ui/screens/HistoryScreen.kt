@@ -41,20 +41,28 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.ConnectionHistoryEntry
 import eu.blackserv.clientssh.model.ConnectionHistoryResult
 import eu.blackserv.clientssh.storage.LocalAppStore
+import eu.blackserv.clientssh.ui.theme.LocalAppSkin
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
 
 private val historyDateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy  HH:mm:ss")
+private val neonPrimaryText = Color(0xFFF2F7F4)
+private val neonSecondaryText = Color(0xFFAFBDB7)
+private val neonCard = Color(0xFF07100D)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen() {
     val context = LocalContext.current
+    val neon = LocalAppSkin.current == AppSkin.NEON
+    val primaryText = if (neon) neonPrimaryText else MaterialTheme.colorScheme.onSurface
+    val secondaryText = if (neon) neonSecondaryText else MaterialTheme.colorScheme.onSurfaceVariant
     val store = remember(context.applicationContext) { LocalAppStore(context.applicationContext) }
     var entries by remember { mutableStateOf(store.loadConnectionHistory()) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -65,30 +73,36 @@ fun HistoryScreen() {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Historia", fontWeight = FontWeight.Bold)
+                        Text("Historia", color = primaryText, fontWeight = FontWeight.Bold)
                         Text(
                             if (entries.isEmpty()) "Brak zapisanych sesji" else "${entries.size} ostatnich sesji",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = secondaryText,
                             style = MaterialTheme.typography.labelSmall,
                         )
                     }
                 },
                 actions = {
-                    IconButton(
-                        enabled = entries.isNotEmpty(),
-                        onClick = { confirmClear = true },
-                    ) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = "Wyczyść historię")
+                    IconButton(enabled = entries.isNotEmpty(), onClick = { confirmClear = true }) {
+                        Icon(
+                            Icons.Default.DeleteSweep,
+                            contentDescription = "Wyczyść historię",
+                            tint = if (entries.isNotEmpty()) secondaryText else secondaryText.copy(alpha = .35f),
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .92f),
+                    titleContentColor = primaryText,
                 ),
             )
         },
     ) { padding ->
         if (entries.isEmpty()) {
-            EmptyHistory(Modifier.fillMaxSize().padding(padding))
+            EmptyHistory(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                primaryText = primaryText,
+                secondaryText = secondaryText,
+            )
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
@@ -96,7 +110,7 @@ fun HistoryScreen() {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(entries, key = { it.id }) { entry ->
-                    HistoryCard(entry)
+                    HistoryCard(entry = entry, neon = neon, primaryText = primaryText, secondaryText = secondaryText)
                 }
             }
         }
@@ -122,17 +136,26 @@ fun HistoryScreen() {
 }
 
 @Composable
-private fun EmptyHistory(modifier: Modifier) {
+private fun EmptyHistory(
+    modifier: Modifier,
+    primaryText: Color,
+    secondaryText: Color,
+) {
     Column(
         modifier = modifier.padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(Icons.Default.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        Text("Historia jest pusta", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Icon(Icons.Default.History, contentDescription = null, tint = Color(0xFF58FF94))
+        Text(
+            "Historia jest pusta",
+            color = primaryText,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 10.dp),
+        )
         Text(
             "Po pierwszym połączeniu zobaczysz tutaj host, czas rozpoczęcia, długość sesji i jej wynik.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = secondaryText,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 6.dp),
         )
@@ -140,12 +163,17 @@ private fun EmptyHistory(modifier: Modifier) {
 }
 
 @Composable
-private fun HistoryCard(entry: ConnectionHistoryEntry) {
+private fun HistoryCard(
+    entry: ConnectionHistoryEntry,
+    neon: Boolean,
+    primaryText: Color,
+    secondaryText: Color,
+) {
     val resultColor = when {
-        entry.finishedAt == null -> MaterialTheme.colorScheme.tertiary
-        entry.result == ConnectionHistoryResult.ERROR -> MaterialTheme.colorScheme.error
-        entry.result == ConnectionHistoryResult.DISCONNECTED -> MaterialTheme.colorScheme.secondary
-        else -> MaterialTheme.colorScheme.primary
+        entry.finishedAt == null -> Color(0xFF58FF94)
+        entry.result == ConnectionHistoryResult.ERROR -> Color(0xFFFF7187)
+        entry.result == ConnectionHistoryResult.DISCONNECTED -> Color(0xFFFFCB4A)
+        else -> Color(0xFF58FF94)
     }
     val resultLabel = when {
         entry.finishedAt == null -> "AKTYWNA"
@@ -157,19 +185,27 @@ private fun HistoryCard(entry: ConnectionHistoryEntry) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, resultColor.copy(alpha = .45f)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f)),
+        border = BorderStroke(1.dp, resultColor.copy(alpha = .55f)),
+        colors = CardDefaults.cardColors(
+            containerColor = if (neon) neonCard else MaterialTheme.colorScheme.surface,
+            contentColor = primaryText,
+        ),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(entry.profileName.ifBlank { entry.host }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(
+                    entry.profileName.ifBlank { entry.host },
+                    color = primaryText,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = resultColor.copy(alpha = .10f),
-                    border = BorderStroke(1.dp, resultColor.copy(alpha = .65f)),
+                    border = BorderStroke(1.dp, resultColor.copy(alpha = .70f)),
                 ) {
                     Text(
                         resultLabel,
@@ -184,20 +220,20 @@ private fun HistoryCard(entry: ConnectionHistoryEntry) {
             Text(
                 "${entry.username}@${entry.host}:${entry.port}",
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = secondaryText,
                 style = MaterialTheme.typography.bodySmall,
             )
 
             Row {
-                Text(formatTimestamp(entry.startedAt), style = MaterialTheme.typography.labelMedium)
+                Text(formatTimestamp(entry.startedAt), color = primaryText, style = MaterialTheme.typography.labelMedium)
                 Spacer(Modifier.width(10.dp))
-                Text("• ${formatDuration(entry)}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+                Text("• ${formatDuration(entry)}", color = secondaryText, style = MaterialTheme.typography.labelMedium)
                 Spacer(Modifier.weight(1f))
                 Text(entry.protocol.label, color = resultColor, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
             }
 
             if (entry.message.isNotBlank()) {
-                Text(entry.message, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                Text(entry.message, color = secondaryText, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
