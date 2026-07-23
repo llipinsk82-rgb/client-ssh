@@ -7,6 +7,8 @@ import android.util.Base64
 import eu.blackserv.clientssh.model.AppSettings
 import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.AuthenticationMethod
+import eu.blackserv.clientssh.model.ConnectionHistoryEntry
+import eu.blackserv.clientssh.model.ConnectionHistoryResult
 import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
@@ -63,6 +65,29 @@ class LocalAppStore(context: Context) {
         val array = JSONArray()
         favorites.forEach { favorite -> runCatching { array.put(favorite.toJson()) } }
         prefs.edit().putString(KEY_FAVORITES, array.toString()).commit()
+    }
+
+    fun loadConnectionHistory(): List<ConnectionHistoryEntry> {
+        val raw = prefs.getString(KEY_CONNECTION_HISTORY, "[]").orEmpty()
+        val array = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                runCatching { item.toConnectionHistoryEntry() }.getOrNull()?.let { add(it) }
+            }
+        }.sortedByDescending { it.startedAt }
+    }
+
+    fun saveConnectionHistory(entries: List<ConnectionHistoryEntry>) {
+        val array = JSONArray()
+        entries.sortedByDescending { it.startedAt }.take(MAX_HISTORY_ENTRIES).forEach { entry ->
+            array.put(entry.toJson())
+        }
+        prefs.edit().putString(KEY_CONNECTION_HISTORY, array.toString()).commit()
+    }
+
+    fun clearConnectionHistory() {
+        prefs.edit().remove(KEY_CONNECTION_HISTORY).commit()
     }
 
     fun loadAppSettings(): AppSettings = AppSettings(
@@ -126,6 +151,33 @@ class LocalAppStore(context: Context) {
         runImmediately = optBoolean("runImmediately", false),
     )
 
+    private fun ConnectionHistoryEntry.toJson(): JSONObject = JSONObject()
+        .put("id", id)
+        .put("profileId", profileId)
+        .put("profileName", profileName)
+        .put("host", host)
+        .put("port", port)
+        .put("username", username)
+        .put("protocol", protocol.name)
+        .put("startedAt", startedAt)
+        .put("finishedAt", finishedAt ?: JSONObject.NULL)
+        .put("result", result.name)
+        .put("message", message)
+
+    private fun JSONObject.toConnectionHistoryEntry(): ConnectionHistoryEntry = ConnectionHistoryEntry(
+        id = optString("id").ifBlank { UUID.randomUUID().toString() },
+        profileId = optString("profileId"),
+        profileName = optString("profileName"),
+        host = optString("host"),
+        port = optInt("port", 22),
+        username = optString("username"),
+        protocol = enumValueOrDefault(optString("protocol"), ConnectionProtocol.SSH),
+        startedAt = optLong("startedAt"),
+        finishedAt = if (isNull("finishedAt")) null else optLong("finishedAt"),
+        result = enumValueOrDefault(optString("result"), ConnectionHistoryResult.DISCONNECTED),
+        message = optString("message"),
+    )
+
     private fun encryptOrBlank(value: String): String =
         if (value.isBlank()) "" else runCatching { encrypt(value) }.getOrDefault("")
 
@@ -160,7 +212,7 @@ class LocalAppStore(context: Context) {
                 KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
             )
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_NONE)
                 .setRandomizedEncryptionRequired(true)
                 .build(),
         )
@@ -177,6 +229,7 @@ class LocalAppStore(context: Context) {
         private const val KEY_PROFILES = "profiles"
         private const val KEY_PROFILES_BACKUP = "profiles_backup"
         private const val KEY_FAVORITES = "favorites"
+        private const val KEY_CONNECTION_HISTORY = "connection_history"
         private const val KEY_APP_SKIN = "app_skin"
         private const val KEY_KEEP_SCREEN_AWAKE = "keep_screen_awake"
         private const val KEY_BACKGROUND_SESSION_ENABLED = "background_session_enabled"
@@ -184,5 +237,6 @@ class LocalAppStore(context: Context) {
         private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val GCM_TAG_BITS = 128
+        private const val MAX_HISTORY_ENTRIES = 250
     }
 }
