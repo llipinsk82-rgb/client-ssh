@@ -58,7 +58,6 @@ import eu.blackserv.clientssh.ui.screens.UpdateDialog
 import eu.blackserv.clientssh.ui.theme.AppBackdrop
 import eu.blackserv.clientssh.ui.theme.ClientSshTheme
 import eu.blackserv.clientssh.ui.theme.LocalAppSkin
-import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
@@ -99,10 +98,7 @@ class MainActivity : ComponentActivity() {
             if (showStartup) {
                 StartupScreen(onFinished = { showStartup = false })
             } else {
-                ClientSshTheme(
-                    skin = appSettings.skin,
-                    darkTheme = true,
-                ) {
+                ClientSshTheme(skin = appSettings.skin, darkTheme = true) {
                     ClientSshApp(
                         appStore = appStore,
                         appSettings = appSettings,
@@ -138,9 +134,11 @@ class MainActivity : ComponentActivity() {
     private fun startSessionService(profile: HostProfile) {
         PendingSessionRegistry.put(profile)
         TerminalSessionBus.begin(profile)
-        val intent = Intent(this, TerminalSessionService::class.java)
-            .putExtra(TerminalSessionService.EXTRA_PROFILE_ID, profile.id)
-        ContextCompat.startForegroundService(this, intent)
+        ContextCompat.startForegroundService(
+            this,
+            Intent(this, TerminalSessionService::class.java)
+                .putExtra(TerminalSessionService.EXTRA_PROFILE_ID, profile.id),
+        )
     }
 
     private fun stopSessionService() {
@@ -162,11 +160,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setKeepScreenAwake(enabled: Boolean) {
-        if (enabled) {
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
+        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     companion object {
@@ -220,12 +215,7 @@ private fun ClientSshApp(
         session.state == TerminalConnectionState.CONNECTED
     val activeProfile = profiles.firstOrNull { it.id == session.profileId }
 
-    LaunchedEffect(
-        openActiveTerminalRequest,
-        session.profileId,
-        session.state,
-        profiles.size,
-    ) {
+    LaunchedEffect(openActiveTerminalRequest, session.profileId, session.state, profiles.size) {
         if (openActiveTerminalRequest != 0L && sessionIsActive && activeProfile != null) {
             destination = Destination.Terminal(activeProfile)
         }
@@ -233,12 +223,10 @@ private fun ClientSshApp(
 
     fun saveProfiles() = appStore.saveProfiles(profiles)
     fun saveFavorites() = appStore.saveFavorites(favorites)
-
     fun saveTerminalSettings(settings: TerminalSettings) {
         terminalSettings = settings
         appStore.saveTerminalSettings(settings)
     }
-
     fun moveFavorite(favorite: FavoriteCommand, direction: Int) {
         val index = favorites.indexOfFirst { it.id == favorite.id }
         val target = index + direction
@@ -249,14 +237,12 @@ private fun ClientSshApp(
     }
 
     when (val current = destination) {
-        Destination.Profiles -> MainShell(
-            current = current,
-            onSelect = { destination = it },
-        ) {
+        Destination.Profiles -> MainShell(current, { destination = it }) {
             ProfilesScreen(
                 profiles = profiles,
                 activeProfileId = session.profileId.takeIf { sessionIsActive },
                 activeSessionStatus = session.statusText,
+                activeSessionState = session.state,
                 onAdd = {
                     editedProfile = null
                     showProfileEditor = true
@@ -265,17 +251,8 @@ private fun ClientSshApp(
                     editedProfile = it
                     showProfileEditor = true
                 },
-                onClone = { profile ->
-                    editedProfile = profile.copy(
-                        id = UUID.randomUUID().toString(),
-                        name = profile.name.ifBlank { profile.host }.let { "$it kopia" },
-                    )
-                    showProfileEditor = true
-                },
-                onDelete = {
-                    profiles.remove(it)
-                    saveProfiles()
-                },
+                onClone = {},
+                onDelete = {},
                 onConnect = { profile ->
                     if (sessionIsActive && session.profileId == profile.id) {
                         destination = Destination.Terminal(profile)
@@ -290,17 +267,11 @@ private fun ClientSshApp(
             )
         }
 
-        Destination.History -> MainShell(
-            current = current,
-            onSelect = { destination = it },
-        ) {
+        Destination.History -> MainShell(current, { destination = it }) {
             HistoryScreen()
         }
 
-        Destination.Settings -> MainShell(
-            current = current,
-            onSelect = { destination = it },
-        ) {
+        Destination.Settings -> MainShell(current, { destination = it }) {
             SettingsScreen(
                 appSettings = appSettings,
                 terminalSettings = terminalSettings,
@@ -343,14 +314,29 @@ private fun ClientSshApp(
     }
 
     if (showProfileEditor) {
+        val profileBeingEdited = editedProfile
         ProfileEditorDialog(
-            existing = editedProfile,
+            existing = profileBeingEdited,
+            isActiveProfile = profileBeingEdited?.id == session.profileId && sessionIsActive,
             onDismiss = { showProfileEditor = false },
             onSave = { profile ->
                 val index = profiles.indexOfFirst { it.id == profile.id }
                 if (index >= 0) profiles[index] = profile else profiles.add(profile)
                 saveProfiles()
                 showProfileEditor = false
+            },
+            onClone = { clone ->
+                profiles.add(clone)
+                saveProfiles()
+                editedProfile = clone
+                showProfileEditor = false
+            },
+            onDelete = { profile ->
+                if (!(sessionIsActive && session.profileId == profile.id)) {
+                    profiles.removeAll { it.id == profile.id }
+                    saveProfiles()
+                    showProfileEditor = false
+                }
             },
         )
     }
@@ -369,20 +355,9 @@ private fun MainShell(
     AppBackdrop {
         Scaffold(
             containerColor = Color.Transparent,
-            bottomBar = {
-                MainNavigationBar(
-                    current = current,
-                    onSelect = onSelect,
-                )
-            },
+            bottomBar = { MainNavigationBar(current = current, onSelect = onSelect) },
         ) { padding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            ) {
-                content()
-            }
+            Box(Modifier.fillMaxSize().padding(padding)) { content() }
         }
     }
 }
@@ -410,12 +385,7 @@ private fun MainNavigationBar(
             NavigationBarItem(
                 selected = selected,
                 onClick = { onSelect(item.destination) },
-                icon = {
-                    Icon(
-                        imageVector = item.icon,
-                        contentDescription = item.label,
-                    )
-                },
+                icon = { Icon(item.icon, contentDescription = item.label) },
                 label = { Text(item.label) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = if (skin == AppSkin.NEON) {
@@ -424,11 +394,9 @@ private fun MainNavigationBar(
                         MaterialTheme.colorScheme.primary
                     },
                     selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = if (skin == AppSkin.NEON) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
-                    } else {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                    },
+                    indicatorColor = MaterialTheme.colorScheme.primary.copy(
+                        alpha = if (skin == AppSkin.NEON) 0.20f else 0.12f,
+                    ),
                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
