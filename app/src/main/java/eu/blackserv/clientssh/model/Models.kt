@@ -51,6 +51,26 @@ data class FavoriteCommand(
     val runImmediately: Boolean = false,
 )
 
+enum class ConnectionHistoryResult {
+    CONNECTED,
+    DISCONNECTED,
+    ERROR,
+}
+
+data class ConnectionHistoryEntry(
+    val id: String = UUID.randomUUID().toString(),
+    val profileId: String,
+    val profileName: String,
+    val host: String,
+    val port: Int,
+    val username: String,
+    val protocol: ConnectionProtocol,
+    val startedAt: Long,
+    val finishedAt: Long? = null,
+    val result: ConnectionHistoryResult = ConnectionHistoryResult.CONNECTED,
+    val message: String = "",
+)
+
 data class TerminalSettings(
     val keepScreenAwake: Boolean = true,
     val backgroundSessionEnabled: Boolean = true,
