@@ -242,7 +242,6 @@ private fun ClientSshApp(
                 profiles = profiles,
                 activeProfileId = session.profileId.takeIf { sessionIsActive },
                 activeSessionStatus = session.statusText,
-                activeSessionState = session.state,
                 onAdd = {
                     editedProfile = null
                     showProfileEditor = true
