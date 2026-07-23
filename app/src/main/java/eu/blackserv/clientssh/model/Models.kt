@@ -53,6 +53,7 @@ data class FavoriteCommand(
 
 data class TerminalSettings(
     val keepScreenAwake: Boolean = true,
+    val backgroundSessionEnabled: Boolean = true,
 )
 
 fun defaultFavoriteCommands(): List<FavoriteCommand> = listOf(
