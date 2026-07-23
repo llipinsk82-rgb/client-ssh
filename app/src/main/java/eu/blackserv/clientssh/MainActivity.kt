@@ -144,7 +144,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun stopSessionService() {
-        stopService(Intent(this, TerminalSessionService::class.java))
+        startService(
+            Intent(this, TerminalSessionService::class.java)
+                .setAction(TerminalSessionService.ACTION_DISCONNECT),
+        )
     }
 
     private fun setFullscreen(enabled: Boolean) {
