@@ -14,18 +14,24 @@ import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.model.defaultFavoriteCommands
+import eu.blackserv.clientssh.terminal.ConnectionHistoryCoordinator
 import java.security.KeyStore
 import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import kotlin.math.abs
 import org.json.JSONArray
 import org.json.JSONObject
 
 class LocalAppStore(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    init {
+        ConnectionHistoryCoordinator.initialize(this)
+    }
 
     fun loadProfiles(): List<HostProfile> =
         loadProfilesFrom(KEY_PROFILES).ifEmpty { loadProfilesFrom(KEY_PROFILES_BACKUP) }
@@ -80,9 +86,10 @@ class LocalAppStore(context: Context) {
 
     fun saveConnectionHistory(entries: List<ConnectionHistoryEntry>) {
         val array = JSONArray()
-        entries.sortedByDescending { it.startedAt }.take(MAX_HISTORY_ENTRIES).forEach { entry ->
-            array.put(entry.toJson())
-        }
+        deduplicateHistory(entries)
+            .sortedByDescending { it.startedAt }
+            .take(MAX_HISTORY_ENTRIES)
+            .forEach { entry -> array.put(entry.toJson()) }
         prefs.edit().putString(KEY_CONNECTION_HISTORY, array.toString()).commit()
     }
 
@@ -111,6 +118,50 @@ class LocalAppStore(context: Context) {
             .putBoolean(KEY_KEEP_SCREEN_AWAKE, settings.keepScreenAwake)
             .putBoolean(KEY_BACKGROUND_SESSION_ENABLED, settings.backgroundSessionEnabled)
             .commit()
+    }
+
+    private fun deduplicateHistory(entries: List<ConnectionHistoryEntry>): List<ConnectionHistoryEntry> {
+        val result = mutableListOf<ConnectionHistoryEntry>()
+        entries.sortedByDescending { it.startedAt }.forEach { candidate ->
+            val duplicateIndex = result.indexOfFirst { existing ->
+                existing.profileId == candidate.profileId &&
+                    abs(existing.startedAt - candidate.startedAt) <= HISTORY_DUPLICATE_WINDOW_MS &&
+                    sessionsOverlap(existing, candidate)
+            }
+            if (duplicateIndex < 0) {
+                result += candidate
+            } else {
+                result[duplicateIndex] = mergeHistoryEntries(result[duplicateIndex], candidate)
+            }
+        }
+        return result
+    }
+
+    private fun sessionsOverlap(first: ConnectionHistoryEntry, second: ConnectionHistoryEntry): Boolean {
+        val firstEnd = first.finishedAt ?: Long.MAX_VALUE
+        val secondEnd = second.finishedAt ?: Long.MAX_VALUE
+        return maxOf(first.startedAt, second.startedAt) <= minOf(firstEnd, secondEnd) + 1_000L
+    }
+
+    private fun mergeHistoryEntries(
+        first: ConnectionHistoryEntry,
+        second: ConnectionHistoryEntry,
+    ): ConnectionHistoryEntry {
+        val preferred = if (first.startedAt <= second.startedAt) first else second
+        val result = when {
+            first.result == ConnectionHistoryResult.ERROR || second.result == ConnectionHistoryResult.ERROR ->
+                ConnectionHistoryResult.ERROR
+            first.finishedAt != null || second.finishedAt != null -> ConnectionHistoryResult.DISCONNECTED
+            else -> ConnectionHistoryResult.CONNECTED
+        }
+        val finishedAt = listOfNotNull(first.finishedAt, second.finishedAt).maxOrNull()
+        val messageSource = listOf(first, second).maxByOrNull { it.finishedAt ?: it.startedAt } ?: preferred
+        return preferred.copy(
+            startedAt = minOf(first.startedAt, second.startedAt),
+            finishedAt = finishedAt,
+            result = result,
+            message = messageSource.message.ifBlank { preferred.message },
+        )
     }
 
     private fun HostProfile.toJson(): JSONObject = JSONObject()
@@ -238,5 +289,6 @@ class LocalAppStore(context: Context) {
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val GCM_TAG_BITS = 128
         private const val MAX_HISTORY_ENTRIES = 250
+        private const val HISTORY_DUPLICATE_WINDOW_MS = 3_000L
     }
 }
