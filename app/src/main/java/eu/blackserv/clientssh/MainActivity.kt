@@ -39,6 +39,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import eu.blackserv.clientssh.model.AppSettings
 import eu.blackserv.clientssh.model.AppSkin
+import eu.blackserv.clientssh.model.ConnectionHistoryEntry
+import eu.blackserv.clientssh.model.ConnectionHistoryResult
 import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.model.TerminalSettings
@@ -210,14 +212,94 @@ private fun ClientSshApp(
     var editedProfile by remember { mutableStateOf<HostProfile?>(null) }
     var showProfileEditor by remember { mutableStateOf(false) }
     var showUpdater by remember { mutableStateOf(false) }
+    var trackedHistoryEntry by remember { mutableStateOf<ConnectionHistoryEntry?>(null) }
 
     val sessionIsActive = session.state == TerminalConnectionState.CONNECTING ||
         session.state == TerminalConnectionState.CONNECTED
     val activeProfile = profiles.firstOrNull { it.id == session.profileId }
 
+    fun persistHistoryEntry(entry: ConnectionHistoryEntry) {
+        val history = appStore.loadConnectionHistory().toMutableList()
+        val index = history.indexOfFirst { it.id == entry.id }
+        if (index >= 0) history[index] = entry else history.add(0, entry)
+        appStore.saveConnectionHistory(history)
+    }
+
+    fun newHistoryEntry(profile: HostProfile, now: Long): ConnectionHistoryEntry =
+        ConnectionHistoryEntry(
+            profileId = profile.id,
+            profileName = profile.name,
+            host = profile.host,
+            port = profile.port,
+            username = profile.username,
+            protocol = profile.protocol,
+            startedAt = now,
+            result = ConnectionHistoryResult.CONNECTED,
+            message = "Łączenie…",
+        )
+
     LaunchedEffect(openActiveTerminalRequest, session.profileId, session.state, profiles.size) {
         if (openActiveTerminalRequest != 0L && sessionIsActive && activeProfile != null) {
             destination = Destination.Terminal(activeProfile)
+        }
+    }
+
+    LaunchedEffect(session.profileId, session.state, session.statusText) {
+        val now = System.currentTimeMillis()
+        val profile = profiles.firstOrNull { it.id == session.profileId }
+
+        when (session.state) {
+            TerminalConnectionState.CONNECTING -> {
+                if (profile != null && trackedHistoryEntry?.profileId != profile.id) {
+                    trackedHistoryEntry?.let { previous ->
+                        persistHistoryEntry(
+                            previous.copy(
+                                finishedAt = now,
+                                result = ConnectionHistoryResult.DISCONNECTED,
+                                message = "Uruchomiono inną sesję.",
+                            ),
+                        )
+                    }
+                    trackedHistoryEntry = newHistoryEntry(profile, now).also(::persistHistoryEntry)
+                } else if (trackedHistoryEntry != null) {
+                    trackedHistoryEntry = trackedHistoryEntry?.copy(message = session.statusText)
+                    trackedHistoryEntry?.let(::persistHistoryEntry)
+                }
+            }
+
+            TerminalConnectionState.CONNECTED -> {
+                if (profile != null) {
+                    val entry = trackedHistoryEntry
+                        ?.takeIf { it.profileId == profile.id }
+                        ?: newHistoryEntry(profile, now)
+                    trackedHistoryEntry = entry.copy(
+                        finishedAt = null,
+                        result = ConnectionHistoryResult.CONNECTED,
+                        message = session.statusText,
+                    ).also(::persistHistoryEntry)
+                }
+            }
+
+            TerminalConnectionState.DISCONNECTED,
+            TerminalConnectionState.ERROR,
+            -> {
+                trackedHistoryEntry?.let { entry ->
+                    persistHistoryEntry(
+                        entry.copy(
+                            finishedAt = now,
+                            result = if (session.state == TerminalConnectionState.ERROR) {
+                                ConnectionHistoryResult.ERROR
+                            } else {
+                                ConnectionHistoryResult.DISCONNECTED
+                            },
+                            message = session.statusText,
+                        ),
+                    )
+                }
+                trackedHistoryEntry = null
+            }
+
+            TerminalConnectionState.IDLE -> Unit
         }
     }
 
