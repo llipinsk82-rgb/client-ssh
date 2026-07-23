@@ -1,5 +1,6 @@
 package eu.blackserv.clientssh.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -23,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,10 +44,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import eu.blackserv.clientssh.MainActivity
 import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.ConnectionHistoryEntry
 import eu.blackserv.clientssh.model.ConnectionHistoryResult
+import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.service.TerminalSessionService
 import eu.blackserv.clientssh.storage.LocalAppStore
+import eu.blackserv.clientssh.terminal.PendingSessionRegistry
+import eu.blackserv.clientssh.terminal.TerminalSessionBus
 import eu.blackserv.clientssh.ui.theme.LocalAppSkin
 import java.time.Instant
 import java.time.ZoneId
@@ -66,6 +75,22 @@ fun HistoryScreen() {
     val store = remember(context.applicationContext) { LocalAppStore(context.applicationContext) }
     var entries by remember { mutableStateOf(store.loadConnectionHistory()) }
     var confirmClear by remember { mutableStateOf(false) }
+    val profilesById = remember(entries) { store.loadProfiles().associateBy { it.id } }
+
+    fun reconnect(profile: HostProfile) {
+        PendingSessionRegistry.put(profile)
+        TerminalSessionBus.begin(profile)
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, TerminalSessionService::class.java)
+                .putExtra(TerminalSessionService.EXTRA_PROFILE_ID, profile.id),
+        )
+        context.startActivity(
+            Intent(context, MainActivity::class.java)
+                .setAction(MainActivity.ACTION_OPEN_ACTIVE_TERMINAL)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        )
+    }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -110,7 +135,15 @@ fun HistoryScreen() {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(entries, key = { it.id }) { entry ->
-                    HistoryCard(entry = entry, neon = neon, primaryText = primaryText, secondaryText = secondaryText)
+                    val profile = profilesById[entry.profileId]
+                    HistoryCard(
+                        entry = entry,
+                        neon = neon,
+                        primaryText = primaryText,
+                        secondaryText = secondaryText,
+                        profileAvailable = profile != null,
+                        onReconnect = profile?.let { { reconnect(it) } },
+                    )
                 }
             }
         }
@@ -168,6 +201,8 @@ private fun HistoryCard(
     neon: Boolean,
     primaryText: Color,
     secondaryText: Color,
+    profileAvailable: Boolean,
+    onReconnect: (() -> Unit)?,
 ) {
     val resultColor = when {
         entry.finishedAt == null -> Color(0xFF58FF94)
@@ -234,6 +269,20 @@ private fun HistoryCard(
 
             if (entry.message.isNotBlank()) {
                 Text(entry.message, color = secondaryText, style = MaterialTheme.typography.bodySmall)
+            }
+
+            OutlinedButton(
+                onClick = { onReconnect?.invoke() },
+                enabled = profileAvailable && onReconnect != null,
+                modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                border = BorderStroke(
+                    1.dp,
+                    if (profileAvailable) Color(0xFF42DFFF).copy(alpha = .75f) else secondaryText.copy(alpha = .30f),
+                ),
+            ) {
+                Icon(Icons.Default.Replay, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (profileAvailable) "Połącz ponownie" else "Profil został usunięty")
             }
         }
     }
