@@ -91,8 +91,17 @@ fun SettingsScreen(
             Spacer(Modifier.height(2.dp))
 
             SectionTitle(
-                title = "Terminal",
+                title = "Terminal i sesja",
                 subtitle = "Ustawienia wspólne dla wszystkich profili.",
+            )
+
+            SettingsSwitchRow(
+                title = "Działanie w tle / Session Keeper",
+                subtitle = "Utrzymuje sesję po wyjściu z aplikacji i ponawia połączenie po zerwaniu. Ctrl+D nadal kończy sesję normalnie.",
+                checked = terminalSettings.backgroundSessionEnabled,
+                onCheckedChange = {
+                    onTerminalSettingsChange(terminalSettings.copy(backgroundSessionEnabled = it))
+                },
             )
 
             SettingsSwitchRow(
@@ -104,18 +113,9 @@ fun SettingsScreen(
                 },
             )
 
-            PlannedSetting(
-                title = "Font terminala",
-                value = "Wkrótce",
-            )
-            PlannedSetting(
-                title = "Język aplikacji",
-                value = "Polski",
-            )
-            PlannedSetting(
-                title = "Eksport / import konfiguracji",
-                value = "Wkrótce",
-            )
+            PlannedSetting(title = "Font terminala", value = "Wkrótce")
+            PlannedSetting(title = "Język aplikacji", value = "Polski")
+            PlannedSetting(title = "Eksport / import konfiguracji", value = "Wkrótce")
 
             Spacer(Modifier.height(2.dp))
 
@@ -150,52 +150,28 @@ private fun SectionTitle(
         icon?.invoke()
         Column {
             Text(title, fontWeight = FontWeight.Bold)
-            Text(
-                subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
 
 @Composable
-private fun SkinOption(
-    skin: AppSkin,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
+private fun SkinOption(skin: AppSkin, selected: Boolean, onClick: () -> Unit) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        color = if (selected) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-        } else {
-            MaterialTheme.colorScheme.surface
-        },
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
         shape = MaterialTheme.shapes.medium,
-        border = BorderStroke(
-            1.dp,
-            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-        ),
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
         tonalElevation = if (selected) 4.dp else 1.dp,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RadioButton(
-                selected = selected,
-                onClick = onClick,
-            )
+            RadioButton(selected = selected, onClick = onClick)
             Column(modifier = Modifier.padding(start = 6.dp)) {
                 Text(skin.label, fontWeight = FontWeight.Bold)
-                Text(
-                    skin.description,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Text(skin.description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -220,11 +196,7 @@ private fun SettingsSwitchRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, fontWeight = FontWeight.Medium)
-                Text(
-                    subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
             Switch(checked = checked, onCheckedChange = onCheckedChange)
         }
@@ -232,10 +204,7 @@ private fun SettingsSwitchRow(
 }
 
 @Composable
-private fun PlannedSetting(
-    title: String,
-    value: String,
-) {
+private fun PlannedSetting(title: String, value: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
@@ -247,11 +216,7 @@ private fun PlannedSetting(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(title, modifier = Modifier.weight(1f))
-            Text(
-                value,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelMedium,
-            )
+            Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
         }
     }
 }
