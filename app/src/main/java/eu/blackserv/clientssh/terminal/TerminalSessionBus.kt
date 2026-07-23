@@ -58,6 +58,25 @@ object TerminalSessionBus {
         )
     }
 
+    fun markReconnecting(
+        profile: HostProfile,
+        status: String = "Ponowne łączenie…",
+        notice: String = status,
+    ) {
+        writer = null
+        _snapshot.update { current ->
+            val previousOutput = if (current.profileId == profile.id) current.output else ""
+            val combined = previousOutput + "\n[Session Keeper] $notice\n"
+            TerminalSnapshot(
+                profileId = profile.id,
+                profileName = profile.name,
+                state = TerminalConnectionState.CONNECTING,
+                statusText = status,
+                output = combined.takeLast(MAX_BUFFER_CHARS),
+            )
+        }
+    }
+
     fun attachWriter(sendBytes: (ByteArray) -> Unit) {
         writer = sendBytes
     }
