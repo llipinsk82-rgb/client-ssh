@@ -1,154 +1,91 @@
 package eu.blackserv.clientssh.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Computer
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.SystemUpdateAlt
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.blackserv.clientssh.BuildConfig
+import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.HostProfile
-
-private val ScreenBackground = Color(0xFF08100D)
-private val PanelColor = Color(0xFF101A16)
-private val PanelStroke = Color(0xFF26372F)
-private val AccentGreen = Color(0xFF62D58A)
-private val MutedText = Color(0xFFA7B5AD)
+import eu.blackserv.clientssh.ui.theme.AppBackdrop
+import eu.blackserv.clientssh.ui.theme.LocalAppSkin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfilesScreen(
-    profiles: List<HostProfile>,
-    onAdd: () -> Unit,
-    onEdit: (HostProfile) -> Unit,
-    onClone: (HostProfile) -> Unit,
-    onDelete: (HostProfile) -> Unit,
-    onConnect: (HostProfile) -> Unit,
-    onOpenSftp: (HostProfile) -> Unit,
-    onCheckUpdates: () -> Unit,
+    profiles: List<HostProfile>, activeProfileId: String?, activeSessionStatus: String,
+    onAdd: () -> Unit, onEdit: (HostProfile) -> Unit,
+    onClone: (HostProfile) -> Unit, onDelete: (HostProfile) -> Unit,
+    onConnect: (HostProfile) -> Unit, onDisconnectActiveSession: () -> Unit,
+    onOpenSftp: (HostProfile) -> Unit, onCheckUpdates: () -> Unit,
 ) {
-    Scaffold(
-        containerColor = ScreenBackground,
-        topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF0A1511),
-                    titleContentColor = Color(0xFFE6F0EA),
-                    actionIconContentColor = AccentGreen,
-                ),
-                title = {
-                    Column {
-                        Text("Client SSH", fontWeight = FontWeight.Bold)
-                        Text(
-                            "BlackServ • v${BuildConfig.VERSION_NAME}",
-                            color = MutedText,
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onCheckUpdates) {
-                        Icon(Icons.Default.SystemUpdateAlt, contentDescription = "Sprawdź aktualizacje")
-                    }
-                },
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAdd,
-                containerColor = AccentGreen,
-                contentColor = Color(0xFF06120B),
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Dodaj profil")
-            }
-        },
-    ) { padding ->
-        if (profiles.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Surface(
-                    color = PanelColor,
-                    shape = RoundedCornerShape(18.dp),
-                    tonalElevation = 2.dp,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, PanelStroke),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(Icons.Default.Computer, contentDescription = null, tint = AccentGreen)
-                        Text("Brak profili", fontWeight = FontWeight.Bold)
-                        Text("Dodaj VPS lub tuner Enigma2 przez SSH albo Telnet.", color = MutedText)
-                        Button(
-                            onClick = onAdd,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = AccentGreen,
-                                contentColor = Color(0xFF06120B),
-                            ),
-                            modifier = Modifier.padding(top = 10.dp),
-                        ) {
-                            Text("Dodaj pierwszy profil")
+    val neon = LocalAppSkin.current == AppSkin.NEON
+    AppBackdrop {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (neon) .86f else 1f),
+                    ),
+                    title = {
+                        Column {
+                            Text("Client SSH", fontWeight = FontWeight.Bold)
+                            Text(
+                                if (neon) "BLACKSERV NEON // v${BuildConfig.VERSION_NAME}" else "BlackServ Classic • v${BuildConfig.VERSION_NAME}",
+                                color = if (neon) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
                         }
-                    }
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding).background(ScreenBackground),
-                contentPadding = PaddingValues(10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    },
+                    actions = { IconButton(onClick = onCheckUpdates) { Icon(Icons.Default.SystemUpdateAlt, "Sprawdź aktualizacje") } },
+                )
+            },
+            floatingActionButton = {
+                FloatingActionButton(
+                    onClick = onAdd,
+                    containerColor = if (neon) Color(0xFF0B1712) else MaterialTheme.colorScheme.primary,
+                    contentColor = if (neon) NeonGreen else MaterialTheme.colorScheme.onPrimary,
+                ) { Icon(Icons.Default.Add, "Dodaj profil") }
+            },
+        ) { padding ->
+            if (profiles.isEmpty()) EmptyProfiles(Modifier.padding(padding), onAdd)
+            else LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 88.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(profiles, key = { it.id }) { profile ->
-                    HostProfileRow(
+                    val addressMarker = "${profile.host}:${profile.port}"
+                    val activeFromSession = activeProfileId == profile.id
+                    val activeFromConnectedStatus = activeSessionStatus.startsWith("SSH •") &&
+                        activeSessionStatus.contains(addressMarker, ignoreCase = true)
+                    ProfileCard(
                         profile = profile,
-                        onConnect = onConnect,
-                        onOpenSftp = onOpenSftp,
-                        onClone = onClone,
+                        active = activeFromSession || activeFromConnectedStatus,
+                        status = activeSessionStatus,
+                        neon = neon,
                         onEdit = onEdit,
-                        onDelete = onDelete,
+                        onConnect = onConnect,
+                        onDisconnect = onDisconnectActiveSession,
+                        onSftp = onOpenSftp,
                     )
                 }
             }
@@ -157,68 +94,164 @@ fun ProfilesScreen(
 }
 
 @Composable
-private fun HostProfileRow(
-    profile: HostProfile,
-    onConnect: (HostProfile) -> Unit,
-    onOpenSftp: (HostProfile) -> Unit,
-    onClone: (HostProfile) -> Unit,
-    onEdit: (HostProfile) -> Unit,
-    onDelete: (HostProfile) -> Unit,
+private fun EmptyProfiles(modifier: Modifier, onAdd: () -> Unit) {
+    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Surface(shape = MaterialTheme.shapes.large, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
+            Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Computer, null, tint = MaterialTheme.colorScheme.primary)
+                Text("Brak profili", fontWeight = FontWeight.Bold)
+                Text("Dodaj VPS lub tuner Enigma2 przez SSH albo Telnet.")
+                Button(onClick = onAdd) { Text("Dodaj pierwszy profil") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileCard(
+    profile: HostProfile, active: Boolean, status: String, neon: Boolean,
+    onEdit: (HostProfile) -> Unit, onConnect: (HostProfile) -> Unit,
+    onDisconnect: () -> Unit, onSftp: (HostProfile) -> Unit,
 ) {
+    val clipboard = LocalClipboardManager.current
+    val address = "${profile.username.ifBlank { "—" }}@${profile.host}:${profile.port}"
+    val accent = if (neon) NeonGreen else MaterialTheme.colorScheme.primary
+    val outline = if (active) accent else if (neon) Color(0xFF1B7246) else MaterialTheme.colorScheme.outline
+    val shape = RoundedCornerShape(if (neon) 20.dp else 13.dp)
+    val cardModifier = Modifier.fillMaxWidth().then(
+        if (neon) Modifier.shadow(
+            elevation = if (active) 10.dp else 5.dp,
+            shape = shape,
+            ambientColor = outline.copy(alpha = .30f),
+            spotColor = outline.copy(alpha = .30f),
+        ) else Modifier,
+    )
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = PanelColor),
-        border = androidx.compose.foundation.BorderStroke(1.dp, PanelStroke),
-        shape = RoundedCornerShape(14.dp),
+        modifier = cardModifier,
+        shape = shape,
+        border = BorderStroke(if (active) 1.2.dp else 1.dp, outline),
+        colors = CardDefaults.cardColors(containerColor = if (neon) Color(0xFF07100D) else MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(0.dp),
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(profile.name, fontWeight = FontWeight.Bold, color = Color(0xFFE6F0EA))
+        Row(Modifier.fillMaxWidth()) {
+            if (neon) Box(Modifier.width(3.dp).height(if (active) 218.dp else 158.dp).background(Color(0xFF1E7A4A)))
+            Column(Modifier.weight(1f).padding(horizontal = if (neon) 14.dp else 12.dp, vertical = if (neon) 12.dp else 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "${profile.username.ifBlank { "—" }}@${profile.host}:${profile.port}",
-                        color = MutedText,
+                        profile.name,
+                        modifier = Modifier.weight(1f),
+                        color = if (neon) Color.White else MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    StatusBadge(profile.protocol.label, active, status, neon)
+                    Spacer(Modifier.width(6.dp))
+                    EditButton(neon) { onEdit(profile) }
+                }
+
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        address,
+                        modifier = Modifier.weight(1f),
+                        color = if (neon) Color(0xFFADBAB6) else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace,
                         style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                }
-                AssistChip(onClick = {}, label = { Text(profile.protocol.label) })
-                IconButton(onClick = { onClone(profile) }) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Klonuj", tint = MutedText)
-                }
-                IconButton(onClick = { onEdit(profile) }) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edytuj", tint = MutedText)
-                }
-                IconButton(onClick = { onDelete(profile) }) {
-                    Icon(Icons.Default.Delete, contentDescription = "Usuń", tint = Color(0xFFE88989))
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = { onConnect(profile) },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentGreen,
-                        contentColor = Color(0xFF06120B),
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Text("Terminal")
-                }
-                if (profile.protocol == ConnectionProtocol.SSH) {
-                    OutlinedButton(
-                        onClick = { onOpenSftp(profile) },
-                        shape = RoundedCornerShape(10.dp),
-                    ) {
-                        Icon(Icons.Default.Folder, contentDescription = null)
-                        Spacer(Modifier.width(4.dp))
-                        Text("SFTP")
+                    IconButton(onClick = { clipboard.setText(AnnotatedString(address)) }, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Default.ContentCopy, "Kopiuj adres", modifier = Modifier.size(18.dp), tint = if (neon) Color(0xFF9CB2AA) else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+
+                if (neon) { Spacer(Modifier.height(8.dp)); HorizontalDivider(color = NeonGreen.copy(.22f)) }
+
+                if (active) AssistChip(
+                    onClick = { onConnect(profile) },
+                    label = { Text("AKTYWNA SESJA • $status", maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace) },
+                    colors = AssistChipDefaults.assistChipColors(containerColor = accent.copy(.10f), labelColor = accent),
+                    border = BorderStroke(1.dp, accent.copy(.55f)),
+                    modifier = Modifier.fillMaxWidth().padding(top = 9.dp),
+                )
+
+                Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    ActionButton(
+                        Modifier.weight(1f), if (active) ">_  Wróć" else ">_  Terminal", accent,
+                        if (neon) Color(0xFF08170F) else MaterialTheme.colorScheme.primary,
+                        if (neon) accent else MaterialTheme.colorScheme.onPrimary,
+                    ) { onConnect(profile) }
+                    if (profile.protocol == ConnectionProtocol.SSH) ActionButton(
+                        Modifier.weight(.9f), "SFTP", if (neon) NeonAmber else MaterialTheme.colorScheme.secondary,
+                        if (neon) Color(0xFF161107) else Color.Transparent,
+                        if (neon) NeonAmber else MaterialTheme.colorScheme.secondary,
+                        Icons.Default.Folder,
+                    ) { onSftp(profile) }
+                }
+
+                if (active) OutlinedButton(
+                    onClick = onDisconnect,
+                    modifier = Modifier.fillMaxWidth().padding(top = 9.dp),
+                    shape = RoundedCornerShape(if (neon) 14.dp else 10.dp),
+                    border = BorderStroke(1.dp, NeonRed.copy(.8f)),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (neon) Color(0xFF160B10) else Color.Transparent, contentColor = NeonRed),
+                    contentPadding = PaddingValues(vertical = 8.dp),
+                ) {
+                    Icon(Icons.Default.PowerSettingsNew, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Rozłącz aktywną sesję")
                 }
             }
         }
     }
 }
+
+@Composable
+private fun StatusBadge(text: String, active: Boolean, status: String, neon: Boolean) {
+    val connecting = active && !status.startsWith("SSH •") &&
+        listOf("łącz", "przywr", "ponow", "czeka").any { status.contains(it, true) }
+    val color = when {
+        connecting -> NeonAmber
+        active -> NeonGreen
+        neon -> Color(0xFF73827C)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (neon) Color(0xFF091510) else MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, color.copy(if (active) .85f else .5f)),
+    ) { Text(text, color = color, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)) }
+}
+
+@Composable
+private fun EditButton(neon: Boolean, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.size(40.dp),
+        shape = RoundedCornerShape(11.dp),
+        border = BorderStroke(1.dp, if (neon) NeonCyan.copy(.8f) else MaterialTheme.colorScheme.outline),
+        colors = ButtonDefaults.outlinedButtonColors(containerColor = if (neon) Color(0xFF091311) else Color.Transparent, contentColor = if (neon) NeonCyan else MaterialTheme.colorScheme.tertiary),
+        contentPadding = PaddingValues(0.dp),
+    ) { Icon(Icons.Default.Edit, "Edytuj", modifier = Modifier.size(20.dp)) }
+}
+
+@Composable
+private fun ActionButton(
+    modifier: Modifier, text: String, border: Color, background: Color, content: Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick, modifier = modifier, shape = RoundedCornerShape(15.dp),
+        border = BorderStroke(1.1.dp, border),
+        colors = ButtonDefaults.outlinedButtonColors(containerColor = background, contentColor = content),
+        contentPadding = PaddingValues(vertical = 10.dp, horizontal = 10.dp),
+    ) {
+        if (icon != null) { Icon(icon, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)) }
+        Text(text, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+private val NeonGreen = Color(0xFF58FF94)
+private val NeonCyan = Color(0xFF42DFFF)
+private val NeonAmber = Color(0xFFFFCB4A)
+private val NeonRed = Color(0xFFFF7187)

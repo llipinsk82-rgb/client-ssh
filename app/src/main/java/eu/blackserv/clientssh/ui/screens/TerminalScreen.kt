@@ -108,6 +108,10 @@ fun TerminalScreen(
     val annotatedOutput = remember(session.output) { session.output.toTerminalAnnotatedString(TerminalText) }
     val controlsEnabled = session.state == TerminalConnectionState.CONNECTED
 
+    // Keep the callback for binary/source compatibility while the control now lives only in Settings.
+    @Suppress("UNUSED_VARIABLE")
+    val settingsSaver = onTerminalSettingsChange
+
     LaunchedEffect(plainOutput.length) { verticalScroll.scrollTo(verticalScroll.maxValue) }
     LaunchedEffect(fullscreen) { onFullscreenChange(fullscreen) }
     LaunchedEffect(terminalSettings.keepScreenAwake, controlsEnabled) {
@@ -208,12 +212,6 @@ fun TerminalScreen(
             ConnectionStatusBar(
                 status = session.statusText,
                 connected = session.state == TerminalConnectionState.CONNECTED,
-                keepScreenAwake = terminalSettings.keepScreenAwake,
-                onToggleKeepScreenAwake = {
-                    onTerminalSettingsChange(
-                        terminalSettings.copy(keepScreenAwake = !terminalSettings.keepScreenAwake),
-                    )
-                },
             )
 
             if (showHealth) HealthCard(profile)
@@ -247,7 +245,11 @@ fun TerminalScreen(
             if (fullscreen) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     IconButton(onClick = { fullscreen = false }) {
-                        Icon(Icons.Default.FullscreenExit, contentDescription = "Wyłącz pełny ekran", tint = Color.White)
+                        Icon(
+                            Icons.Default.FullscreenExit,
+                            contentDescription = "Wyłącz pełny ekran",
+                            tint = Color.White,
+                        )
                     }
                 }
             }
@@ -295,8 +297,6 @@ fun TerminalScreen(
 private fun ConnectionStatusBar(
     status: String,
     connected: Boolean,
-    keepScreenAwake: Boolean,
-    onToggleKeepScreenAwake: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
@@ -304,23 +304,20 @@ private fun ConnectionStatusBar(
         shape = RoundedCornerShape(10.dp),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(if (connected) "●" else "○", color = if (connected) TerminalGreen else Color(0xFF9AA7A0))
+            Text(
+                if (connected) "●" else "○",
+                color = if (connected) TerminalGreen else Color(0xFF9AA7A0),
+            )
             Text(
                 text = status,
                 modifier = Modifier.weight(1f),
                 color = TerminalText,
                 fontFamily = FontFamily.Monospace,
             )
-            IconButton(onClick = onToggleKeepScreenAwake) {
-                Text(
-                    text = if (keepScreenAwake) "☀" else "○",
-                    color = if (keepScreenAwake) TerminalGreen else Color(0xFF9AA7A0),
-                )
-            }
         }
     }
 }

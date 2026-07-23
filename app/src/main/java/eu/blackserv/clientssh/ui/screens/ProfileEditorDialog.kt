@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -40,31 +41,34 @@ private const val MAX_PRIVATE_KEY_CHARS = 256 * 1024
 @Composable
 fun ProfileEditorDialog(
     existing: HostProfile? = null,
+    isActiveProfile: Boolean = false,
     onDismiss: () -> Unit,
     onSave: (HostProfile) -> Unit,
+    onClone: (HostProfile) -> Unit = {},
+    onDelete: (HostProfile) -> Unit = {},
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
 
-    var name by remember { mutableStateOf(existing?.name.orEmpty()) }
-    var host by remember { mutableStateOf(existing?.host.orEmpty()) }
-    var username by remember { mutableStateOf(existing?.username.orEmpty()) }
-    var protocol by remember { mutableStateOf(existing?.protocol ?: ConnectionProtocol.SSH) }
-    var port by remember { mutableStateOf((existing?.port ?: protocol.defaultPort).toString()) }
-    var authentication by remember {
+    var name by remember(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }
+    var host by remember(existing?.id) { mutableStateOf(existing?.host.orEmpty()) }
+    var username by remember(existing?.id) { mutableStateOf(existing?.username.orEmpty()) }
+    var protocol by remember(existing?.id) { mutableStateOf(existing?.protocol ?: ConnectionProtocol.SSH) }
+    var port by remember(existing?.id) { mutableStateOf((existing?.port ?: protocol.defaultPort).toString()) }
+    var authentication by remember(existing?.id) {
         mutableStateOf(existing?.authenticationMethod ?: AuthenticationMethod.PASSWORD)
     }
-    var password by remember { mutableStateOf(existing?.password.orEmpty()) }
-    var privateKey by remember { mutableStateOf(existing?.privateKey.orEmpty()) }
-    var privateKeyPassphrase by remember { mutableStateOf(existing?.privateKeyPassphrase.orEmpty()) }
+    var password by remember(existing?.id) { mutableStateOf(existing?.password.orEmpty()) }
+    var privateKey by remember(existing?.id) { mutableStateOf(existing?.privateKey.orEmpty()) }
+    var privateKeyPassphrase by remember(existing?.id) { mutableStateOf(existing?.privateKeyPassphrase.orEmpty()) }
     var keyMessage by remember { mutableStateOf<String?>(null) }
     var keyError by remember { mutableStateOf<String?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
 
     val keyFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-
         runCatching {
             context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
                 val text = reader.readText()
@@ -93,36 +97,33 @@ fun ProfileEditorDialog(
         (protocol != ConnectionProtocol.SSH || username.isNotBlank()) &&
         credentialsValid
 
-    fun saveProfile() {
+    fun buildProfile(id: String = existing?.id ?: UUID.randomUUID().toString()): HostProfile? {
+        if (!formValid) return null
         val normalizedKey = if (authentication == AuthenticationMethod.PRIVATE_KEY) {
             privateKey.normalizePrivateKeyText()
         } else {
             ""
         }
-
         if (authentication == AuthenticationMethod.PRIVATE_KEY) {
             val validationError = validatePrivateKeyMaterial(normalizedKey, privateKeyPassphrase)
             if (validationError != null) {
                 keyMessage = null
                 keyError = validationError
-                return
+                return null
             }
         }
-
         keyError = null
-        onSave(
-            HostProfile(
-                id = existing?.id ?: UUID.randomUUID().toString(),
-                name = name.trim(),
-                host = host.trim(),
-                port = port.toInt(),
-                username = username.trim(),
-                protocol = protocol,
-                authenticationMethod = authentication,
-                password = if (authentication == AuthenticationMethod.PASSWORD) password else "",
-                privateKey = normalizedKey,
-                privateKeyPassphrase = if (authentication == AuthenticationMethod.PRIVATE_KEY) privateKeyPassphrase else "",
-            ),
+        return HostProfile(
+            id = id,
+            name = name.trim(),
+            host = host.trim(),
+            port = port.toInt(),
+            username = username.trim(),
+            protocol = protocol,
+            authenticationMethod = authentication,
+            password = if (authentication == AuthenticationMethod.PASSWORD) password else "",
+            privateKey = normalizedKey,
+            privateKeyPassphrase = if (authentication == AuthenticationMethod.PRIVATE_KEY) privateKeyPassphrase else "",
         )
     }
 
@@ -190,7 +191,6 @@ fun ProfileEditorDialog(
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                     )
-
                     AuthenticationMethod.PRIVATE_KEY -> {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -199,29 +199,30 @@ fun ProfileEditorDialog(
                             OutlinedButton(
                                 onClick = {
                                     val pasted = clipboard.getText()?.text.orEmpty()
-                                    if (pasted.isBlank()) {
-                                        keyMessage = null
-                                        keyError = "Schowek jest pusty."
-                                    } else if (pasted.length > MAX_PRIVATE_KEY_CHARS) {
-                                        keyMessage = null
-                                        keyError = "Klucz w schowku jest zbyt duży."
-                                    } else {
-                                        privateKey = pasted.normalizePrivateKeyText()
-                                        keyError = null
-                                        keyMessage = "Klucz wklejony ze schowka."
+                                    when {
+                                        pasted.isBlank() -> {
+                                            keyMessage = null
+                                            keyError = "Schowek jest pusty."
+                                        }
+                                        pasted.length > MAX_PRIVATE_KEY_CHARS -> {
+                                            keyMessage = null
+                                            keyError = "Klucz w schowku jest zbyt duży."
+                                        }
+                                        else -> {
+                                            privateKey = pasted.normalizePrivateKeyText()
+                                            keyError = null
+                                            keyMessage = "Klucz wklejony ze schowka."
+                                        }
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
                             ) { Text("Wklej") }
-
                             OutlinedButton(
                                 onClick = { keyFileLauncher.launch(arrayOf("*/*")) },
                                 modifier = Modifier.weight(1f),
                             ) { Text("Wybierz plik") }
                         }
-
                         Text("Obsługiwane: OpenSSH, PEM, PKCS#8 i PuTTY PPK.")
-
                         OutlinedTextField(
                             value = privateKey,
                             onValueChange = {
@@ -246,23 +247,60 @@ fun ProfileEditorDialog(
                             visualTransformation = PasswordVisualTransformation(),
                             singleLine = true,
                         )
-
                         keyMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
                         keyError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     }
-
                     AuthenticationMethod.INTERACTIVE -> Text("Dane logowania wpiszesz w terminalu.")
                 }
 
-                Text("Dane logowania w tej wersji pozostają tylko w pamięci aplikacji.")
+                Text("Dane logowania są chronione przez Android Keystore.")
+
+                if (existing != null) {
+                    OutlinedButton(
+                        onClick = {
+                            buildProfile(
+                                id = UUID.randomUUID().toString(),
+                            )?.let { clone ->
+                                onClone(clone.copy(name = "${clone.name} kopia"))
+                            }
+                        },
+                        enabled = formValid,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Klonuj profil") }
+
+                    OutlinedButton(
+                        onClick = { confirmDelete = true },
+                        enabled = !isActiveProfile,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) { Text(if (isActiveProfile) "Najpierw rozłącz aktywną sesję" else "Usuń profil") }
+                }
             }
         },
         confirmButton = {
             TextButton(
                 enabled = formValid,
-                onClick = ::saveProfile,
+                onClick = { buildProfile()?.let(onSave) },
             ) { Text("Zapisz") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Anuluj") } },
     )
+
+    if (confirmDelete && existing != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Usunąć profil?") },
+            text = { Text("Profil „${existing.name}” zostanie trwale usunięty z tego urządzenia.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        onDelete(existing)
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Usuń") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Anuluj") } },
+        )
+    }
 }

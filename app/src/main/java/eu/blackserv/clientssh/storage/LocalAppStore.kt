@@ -4,6 +4,8 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import eu.blackserv.clientssh.model.AppSettings
+import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.AuthenticationMethod
 import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.FavoriteCommand
@@ -32,23 +34,16 @@ class LocalAppStore(context: Context) {
         return buildList {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
-                runCatching { item.toHostProfile() }
-                    .getOrNull()
-                    ?.let { add(it) }
+                runCatching { item.toHostProfile() }.getOrNull()?.let { add(it) }
             }
         }
     }
 
     fun saveProfiles(profiles: List<HostProfile>) {
         val array = JSONArray()
-        profiles.forEach { profile ->
-            runCatching { array.put(profile.toJson()) }
-        }
+        profiles.forEach { profile -> runCatching { array.put(profile.toJson()) } }
         val raw = array.toString()
-        prefs.edit()
-            .putString(KEY_PROFILES, raw)
-            .putString(KEY_PROFILES_BACKUP, raw)
-            .commit()
+        prefs.edit().putString(KEY_PROFILES, raw).putString(KEY_PROFILES_BACKUP, raw).commit()
     }
 
     fun loadFavorites(): List<FavoriteCommand> {
@@ -58,9 +53,7 @@ class LocalAppStore(context: Context) {
         val loaded = buildList {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
-                runCatching { item.toFavoriteCommand() }
-                    .getOrNull()
-                    ?.let { add(it) }
+                runCatching { item.toFavoriteCommand() }.getOrNull()?.let { add(it) }
             }
         }
         return loaded.ifEmpty { defaultFavoriteCommands() }
@@ -68,19 +61,30 @@ class LocalAppStore(context: Context) {
 
     fun saveFavorites(favorites: List<FavoriteCommand>) {
         val array = JSONArray()
-        favorites.forEach { favorite ->
-            runCatching { array.put(favorite.toJson()) }
-        }
+        favorites.forEach { favorite -> runCatching { array.put(favorite.toJson()) } }
         prefs.edit().putString(KEY_FAVORITES, array.toString()).commit()
+    }
+
+    fun loadAppSettings(): AppSettings = AppSettings(
+        skin = enumValueOrDefault(
+            prefs.getString(KEY_APP_SKIN, AppSkin.GRAPHITE.name).orEmpty(),
+            AppSkin.GRAPHITE,
+        ),
+    )
+
+    fun saveAppSettings(settings: AppSettings) {
+        prefs.edit().putString(KEY_APP_SKIN, settings.skin.name).commit()
     }
 
     fun loadTerminalSettings(): TerminalSettings = TerminalSettings(
         keepScreenAwake = prefs.getBoolean(KEY_KEEP_SCREEN_AWAKE, true),
+        backgroundSessionEnabled = prefs.getBoolean(KEY_BACKGROUND_SESSION_ENABLED, true),
     )
 
     fun saveTerminalSettings(settings: TerminalSettings) {
         prefs.edit()
             .putBoolean(KEY_KEEP_SCREEN_AWAKE, settings.keepScreenAwake)
+            .putBoolean(KEY_BACKGROUND_SESSION_ENABLED, settings.backgroundSessionEnabled)
             .commit()
     }
 
@@ -131,25 +135,24 @@ class LocalAppStore(context: Context) {
     private fun encrypt(value: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
-        val iv = cipher.iv
-        val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-        return base64(iv) + ":" + base64(encrypted)
+        return base64(cipher.iv) + ":" + base64(cipher.doFinal(value.toByteArray(Charsets.UTF_8)))
     }
 
     private fun decrypt(value: String): String {
         val parts = value.split(':', limit = 2)
         require(parts.size == 2) { "Nieprawidłowy zapis sekretu." }
-        val iv = Base64.decode(parts[0], Base64.NO_WRAP)
-        val encrypted = Base64.decode(parts[1], Base64.NO_WRAP)
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
-        return String(cipher.doFinal(encrypted), Charsets.UTF_8)
+        cipher.init(
+            Cipher.DECRYPT_MODE,
+            getOrCreateKey(),
+            GCMParameterSpec(GCM_TAG_BITS, Base64.decode(parts[0], Base64.NO_WRAP)),
+        )
+        return String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
     }
 
     private fun getOrCreateKey(): SecretKey {
         val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
         (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
-
         val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER)
         keyGenerator.init(
             KeyGenParameterSpec.Builder(
@@ -174,7 +177,9 @@ class LocalAppStore(context: Context) {
         private const val KEY_PROFILES = "profiles"
         private const val KEY_PROFILES_BACKUP = "profiles_backup"
         private const val KEY_FAVORITES = "favorites"
+        private const val KEY_APP_SKIN = "app_skin"
         private const val KEY_KEEP_SCREEN_AWAKE = "keep_screen_awake"
+        private const val KEY_BACKGROUND_SESSION_ENABLED = "background_session_enabled"
         private const val KEY_ALIAS = "blackserv-client-ssh-secrets"
         private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
