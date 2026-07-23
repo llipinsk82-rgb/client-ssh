@@ -1,38 +1,36 @@
 package eu.blackserv.clientssh.ui.screens
 
-import android.graphics.BitmapFactory
-import android.util.Base64
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import eu.blackserv.clientssh.R
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 @Composable
 fun StartupScreen(
     onFinished: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val startupBitmap = remember(context) {
-        runCatching {
-            val encoded = context.resources
-                .openRawResource(R.raw.client_ssh_startup)
-                .bufferedReader()
-                .use { it.readText() }
-            val bytes = Base64.decode(encoded, Base64.DEFAULT)
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-        }.getOrNull()
-    }
+    val neon = Color(0xFF46FF88)
+    val cyan = Color(0xFF37D6FF)
 
     LaunchedEffect(Unit) {
         delay(1_650)
@@ -42,15 +40,78 @@ fun StartupScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF010713)),
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF020609),
+                        Color(0xFF071116),
+                        Color(0xFF020609),
+                    ),
+                ),
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        if (startupBitmap != null) {
-            Image(
-                bitmap = startupBitmap,
-                contentDescription = "Client SSH",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            neon.copy(alpha = 0.18f),
+                            cyan.copy(alpha = 0.08f),
+                            Color.Transparent,
+                        ),
+                    ),
+                ),
+        )
+
+        Column(
+            modifier = Modifier.padding(horizontal = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(112.dp)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(Color(0xFF081114))
+                    .border(1.5.dp, neon.copy(alpha = 0.85f), RoundedCornerShape(28.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = ">_",
+                    color = neon,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 34.sp,
+                )
+            }
+
+            Spacer(Modifier.height(26.dp))
+
+            Text(
+                text = "Client SSH",
+                color = Color.White,
+                fontSize = 42.sp,
+                fontWeight = FontWeight.Bold,
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = "BLACKSERV COMMAND DECK",
+                color = cyan,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.2.sp,
+            )
+
+            Spacer(Modifier.height(14.dp))
+
+            Text(
+                text = "Bezpieczne połączenia. Pełna kontrola.",
+                color = Color(0xFFB8C4CC),
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
             )
         }
     }
