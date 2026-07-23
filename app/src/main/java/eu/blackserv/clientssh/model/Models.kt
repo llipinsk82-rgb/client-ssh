@@ -18,8 +18,8 @@ enum class AppSkin(
     val description: String,
 ) {
     GRAPHITE(
-        label = "BlackServ Graphite",
-        description = "Spokojny, techniczny wygląd z zielonym i bursztynowym akcentem.",
+        label = "BlackServ Classic",
+        description = "Prosty, spokojny i czytelny wygląd do codziennej pracy.",
     ),
     NEON(
         label = "BlackServ Neon",
