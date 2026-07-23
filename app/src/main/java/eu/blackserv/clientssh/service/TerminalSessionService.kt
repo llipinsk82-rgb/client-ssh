@@ -45,8 +45,8 @@ class TerminalSessionService : Service() {
     private var shellOutput: OutputStream? = null
     private var activeProfile: HostProfile? = null
 
-    @Volatile
-    private var maintainSession = false
+    @Volatile private var maintainSession = false
+    @Volatile private var sessionKeeperEnabled = true
 
     override fun onCreate() {
         super.onCreate()
@@ -59,11 +59,18 @@ class TerminalSessionService : Service() {
             return START_NOT_STICKY
         }
 
+        sessionKeeperEnabled = appStore.loadTerminalSettings().backgroundSessionEnabled
         val requestedProfileId = intent?.getStringExtra(EXTRA_PROFILE_ID)?.takeIf(String::isNotBlank)
         val restoringSession = requestedProfileId == null
+
+        if (restoringSession && !sessionKeeperEnabled) {
+            clearRememberedSession()
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
         val profileId = requestedProfileId
             ?: sessionPrefs.getString(KEY_ACTIVE_PROFILE_ID, null)?.takeIf(String::isNotBlank)
-
         if (profileId == null) {
             stopSelf(startId)
             return START_NOT_STICKY
@@ -80,7 +87,6 @@ class TerminalSessionService : Service() {
 
         val profile = PendingSessionRegistry.get(profileId)
             ?: appStore.loadProfiles().firstOrNull { it.id == profileId }
-
         if (profile == null) {
             clearRememberedSession()
             TerminalSessionBus.markError("Nie udało się odtworzyć profilu aktywnej sesji.")
@@ -89,20 +95,13 @@ class TerminalSessionService : Service() {
             return START_NOT_STICKY
         }
 
-        val previousProfile = activeProfile
         val currentState = TerminalSessionBus.snapshot.value
-        val alreadyRunning = previousProfile?.id == profile.id &&
+        val alreadyRunning = activeProfile?.id == profile.id &&
             connectionJob?.isActive == true &&
-            currentState.state in setOf(
-                TerminalConnectionState.CONNECTING,
-                TerminalConnectionState.CONNECTED,
-            )
-        if (alreadyRunning) return START_STICKY
+            currentState.state in setOf(TerminalConnectionState.CONNECTING, TerminalConnectionState.CONNECTED)
+        if (alreadyRunning) return if (sessionKeeperEnabled) START_STICKY else START_NOT_STICKY
 
-        if (previousProfile?.id != null && previousProfile.id != profile.id) {
-            PendingSessionRegistry.remove(previousProfile.id)
-        }
-
+        activeProfile?.id?.takeIf { it != profile.id }?.let(PendingSessionRegistry::remove)
         activeProfile = profile
         PendingSessionRegistry.put(profile)
         maintainSession = true
@@ -114,25 +113,23 @@ class TerminalSessionService : Service() {
                 notice = "Android ponownie uruchomił Session Keeper. Przywracam połączenie.",
             )
         } else {
-            rememberActiveSession(profile.id, connected = false)
+            if (sessionKeeperEnabled) rememberActiveSession(profile.id, connected = false) else clearRememberedSession()
             if (
                 currentState.profileId != profile.id ||
-                currentState.state !in setOf(
-                    TerminalConnectionState.CONNECTING,
-                    TerminalConnectionState.CONNECTED,
-                )
+                currentState.state !in setOf(TerminalConnectionState.CONNECTING, TerminalConnectionState.CONNECTED)
             ) {
                 TerminalSessionBus.begin(profile)
             }
         }
 
-        updateNotification(
-            profileName = profile.name,
-            status = if (restoringSession) "Przywracanie połączenia…" else "Łączenie…",
-            profileId = profile.id,
-        )
+        updateNotification(profile.name, if (restoringSession) "Przywracanie połączenia…" else "Łączenie…", profile.id)
         startConnection(profile, reconnecting = restoringSession)
-        return START_STICKY
+        return if (sessionKeeperEnabled) START_STICKY else START_NOT_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (!sessionKeeperEnabled) disconnectAndStop(0, "Sesja zakończona po zamknięciu aplikacji")
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
@@ -142,7 +139,7 @@ class TerminalSessionService : Service() {
         serviceScope.cancel()
 
         val profile = activeProfile
-        if (maintainSession && profile != null) {
+        if (maintainSession && sessionKeeperEnabled && profile != null) {
             TerminalSessionBus.markReconnecting(
                 profile = profile,
                 status = "Session Keeper czeka na restart…",
@@ -176,6 +173,7 @@ class TerminalSessionService : Service() {
         val host = profile.host.trim()
         val username = profile.username.trim()
         var connectedOnce = false
+        var shellEndedNormally = false
 
         if (reconnecting && TerminalSessionBus.snapshot.value.state != TerminalConnectionState.CONNECTING) {
             TerminalSessionBus.markReconnecting(profile)
@@ -191,8 +189,7 @@ class TerminalSessionService : Service() {
             jsch.setKnownHosts(knownHosts.absolutePath)
 
             if (profile.authenticationMethod == AuthenticationMethod.PRIVATE_KEY) {
-                val passphrase = profile.privateKeyPassphrase
-                    .takeIf(String::isNotEmpty)
+                val passphrase = profile.privateKeyPassphrase.takeIf(String::isNotEmpty)
                     ?.toByteArray(StandardCharsets.UTF_8)
                 jsch.addIdentity(
                     profile.id,
@@ -203,9 +200,7 @@ class TerminalSessionService : Service() {
             }
 
             val session = jsch.getSession(username, host, profile.port).apply {
-                if (profile.authenticationMethod == AuthenticationMethod.PASSWORD) {
-                    setPassword(profile.password)
-                }
+                if (profile.authenticationMethod == AuthenticationMethod.PASSWORD) setPassword(profile.password)
                 setConfig("StrictHostKeyChecking", "accept-new")
                 setConfig(
                     "PreferredAuthentications",
@@ -231,7 +226,7 @@ class TerminalSessionService : Service() {
             channel.connect(CHANNEL_TIMEOUT_MS)
 
             connectedOnce = true
-            rememberActiveSession(profile.id, connected = true)
+            if (sessionKeeperEnabled) rememberActiveSession(profile.id, connected = true)
             TerminalSessionBus.attachWriter { bytes ->
                 serviceScope.launch {
                     runCatching {
@@ -239,38 +234,39 @@ class TerminalSessionService : Service() {
                             output.write(bytes)
                             output.flush()
                         }
-                    }.onFailure {
-                        closeTransport()
-                    }
+                    }.onFailure { closeTransport() }
                 }
             }
-            TerminalSessionBus.markConnected("SSH • $host:${profile.port} • Session Keeper")
+
+            val keeperLabel = if (sessionKeeperEnabled) " • Session Keeper" else ""
+            TerminalSessionBus.markConnected("SSH • $host:${profile.port}$keeperLabel")
             updateNotification(
-                profileName = profile.name,
-                status = "SSH działa w tle — wybierz WRÓĆ albo ROZŁĄCZ",
-                profileId = profile.id,
+                profile.name,
+                if (sessionKeeperEnabled) "SSH działa w tle — wybierz WRÓĆ albo ROZŁĄCZ" else "SSH aktywne do zamknięcia aplikacji",
+                profile.id,
             )
 
             val buffer = ByteArray(8 * 1024)
             while (serviceScope.isActive && maintainSession && channel.isConnected) {
                 val read = input.read(buffer)
-                if (read < 0) break
+                if (read < 0) {
+                    shellEndedNormally = true
+                    break
+                }
                 if (read > 0) TerminalSessionBus.append(buffer, read)
             }
 
-            if (maintainSession) {
-                scheduleReconnect(profile, "Powłoka SSH została przerwana.")
-            } else {
-                TerminalSessionBus.markDisconnected("Sesja zakończona")
+            when {
+                shellEndedNormally -> finishShellSession(profile, "Sesja zakończona przez powłokę")
+                maintainSession && sessionKeeperEnabled -> scheduleReconnect(profile, "Powłoka SSH została przerwana.")
+                else -> finishShellSession(profile, "Sesja zakończona")
             }
         } catch (_: CancellationException) {
             throw CancellationException()
         } catch (error: Throwable) {
             val readable = error.readableMessage(host)
-            val sessionWasPreviouslyConnected = connectedOnce ||
-                sessionPrefs.getBoolean(KEY_SESSION_WAS_CONNECTED, false)
-
-            if (maintainSession && sessionWasPreviouslyConnected && error.isRetryable()) {
+            val sessionWasPreviouslyConnected = connectedOnce || sessionPrefs.getBoolean(KEY_SESSION_WAS_CONNECTED, false)
+            if (maintainSession && sessionKeeperEnabled && sessionWasPreviouslyConnected && error.isRetryable()) {
                 scheduleReconnect(profile, readable)
             } else {
                 failPermanently(profile, readable)
@@ -286,25 +282,32 @@ class TerminalSessionService : Service() {
         }
     }
 
-    private fun scheduleReconnect(profile: HostProfile, reason: String) {
-        if (!maintainSession) return
+    private fun finishShellSession(profile: HostProfile, message: String) {
+        maintainSession = false
+        reconnectJob?.cancel()
+        clearRememberedSession()
+        TerminalSessionBus.markDisconnected(message)
+        PendingSessionRegistry.remove(profile.id)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
 
+    private fun scheduleReconnect(profile: HostProfile, reason: String) {
+        if (!maintainSession || !sessionKeeperEnabled) return
         TerminalSessionBus.markReconnecting(
             profile = profile,
             status = "Ponowne łączenie za ${RECONNECT_DELAY_MS / 1_000} s…",
             notice = "$reason Ponawiam połączenie za ${RECONNECT_DELAY_MS / 1_000} s.",
         )
         updateNotification(
-            profileName = profile.name,
-            status = "Połączenie przerwane — ponawiam za ${RECONNECT_DELAY_MS / 1_000} s",
-            profileId = profile.id,
+            profile.name,
+            "Połączenie przerwane — ponawiam za ${RECONNECT_DELAY_MS / 1_000} s",
+            profile.id,
         )
-
         reconnectJob?.cancel()
         reconnectJob = serviceScope.launch {
             delay(RECONNECT_DELAY_MS)
-            if (!maintainSession) return@launch
-            startConnection(profile, reconnecting = true)
+            if (maintainSession && sessionKeeperEnabled) startConnection(profile, reconnecting = true)
         }
     }
 
@@ -324,10 +327,10 @@ class TerminalSessionService : Service() {
         closeTransport()
         clearRememberedSession()
         TerminalSessionBus.markDisconnected(message)
-        activeProfile?.id?.let { PendingSessionRegistry.remove(it) }
+        activeProfile?.id?.let(PendingSessionRegistry::remove)
         activeProfile = null
         stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf(startId)
+        if (startId > 0) stopSelf(startId) else stopSelf()
     }
 
     private fun rememberActiveSession(profileId: String, connected: Boolean) {
@@ -357,7 +360,6 @@ class TerminalSessionService : Service() {
             .setAction(MainActivity.ACTION_OPEN_ACTIVE_TERMINAL)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         if (profileId != null) openIntent.putExtra(EXTRA_PROFILE_ID, profileId)
-
         val openPendingIntent = PendingIntent.getActivity(
             this,
             0,
@@ -365,8 +367,7 @@ class TerminalSessionService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val disconnectIntent = Intent(this, TerminalSessionService::class.java)
-            .setAction(ACTION_DISCONNECT)
+        val disconnectIntent = Intent(this, TerminalSessionService::class.java).setAction(ACTION_DISCONNECT)
         if (profileId != null) disconnectIntent.putExtra(EXTRA_PROFILE_ID, profileId)
         val disconnectPendingIntent = PendingIntent.getService(
             this,
@@ -383,11 +384,7 @@ class TerminalSessionService : Service() {
             .setContentIntent(openPendingIntent)
             .setStyle(NotificationCompat.BigTextStyle().bigText(status))
             .addAction(android.R.drawable.ic_menu_view, "WRÓĆ", openPendingIntent)
-            .addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
-                "ROZŁĄCZ",
-                disconnectPendingIntent,
-            )
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "ROZŁĄCZ", disconnectPendingIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
@@ -434,12 +431,10 @@ class TerminalSessionService : Service() {
         val raw = message?.trim().orEmpty()
         return when {
             raw.contains("Auth fail", ignoreCase = true) -> "Nieprawidłowy login, hasło lub klucz SSH."
-            raw.contains("invalid privatekey", ignoreCase = true) ||
-                raw.contains("invalid private key", ignoreCase = true) ->
+            raw.contains("invalid privatekey", ignoreCase = true) || raw.contains("invalid private key", ignoreCase = true) ->
                 "Nieobsługiwany albo uszkodzony klucz prywatny."
             raw.contains("reject HostKey", ignoreCase = true) -> "Klucz hosta SSH zmienił się. Połączenie zostało zablokowane."
-            raw.contains("UnknownHostException", ignoreCase = true) ||
-                raw.contains("Unable to resolve host", ignoreCase = true) ->
+            raw.contains("UnknownHostException", ignoreCase = true) || raw.contains("Unable to resolve host", ignoreCase = true) ->
                 "Nie można znaleźć hosta: $host. Sprawdź internet, DNS albo literówkę w profilu."
             raw.contains("timeout", ignoreCase = true) -> "Przekroczono czas oczekiwania na połączenie."
             raw.isNotEmpty() -> raw
