@@ -115,7 +115,12 @@ private fun ProfileCard(
     val outline = if (active) accent else if (neon) Color(0xFF1B7246) else MaterialTheme.colorScheme.outline
     val shape = RoundedCornerShape(if (neon) 20.dp else 13.dp)
     val cardModifier = Modifier.fillMaxWidth().then(
-        if (neon) Modifier.shadow(if (active) 10.dp else 5.dp, shape, outline.copy(.30f), outline.copy(.30f)) else Modifier,
+        if (neon) Modifier.shadow(
+            elevation = if (active) 10.dp else 5.dp,
+            shape = shape,
+            ambientColor = outline.copy(alpha = .30f),
+            spotColor = outline.copy(alpha = .30f),
+        ) else Modifier,
     )
 
     Card(
