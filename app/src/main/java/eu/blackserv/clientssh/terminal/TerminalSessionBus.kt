@@ -49,13 +49,15 @@ object TerminalSessionBus {
 
     fun begin(profile: HostProfile) {
         writer = null
+        val status = "Łączenie z ${profile.host}:${profile.port}…"
         _snapshot.value = TerminalSnapshot(
             profileId = profile.id,
             profileName = profile.name,
             state = TerminalConnectionState.CONNECTING,
-            statusText = "Łączenie z ${profile.host}:${profile.port}…",
+            statusText = status,
             output = "Łączenie z ${profile.username}@${profile.host}:${profile.port}…\n",
         )
+        ConnectionHistoryCoordinator.begin(profile, status)
     }
 
     fun markReconnecting(
@@ -75,6 +77,7 @@ object TerminalSessionBus {
                 output = combined.takeLast(MAX_BUFFER_CHARS),
             )
         }
+        ConnectionHistoryCoordinator.reconnecting(profile, status)
     }
 
     fun attachWriter(sendBytes: (ByteArray) -> Unit) {
@@ -92,6 +95,7 @@ object TerminalSessionBus {
                 statusText = text,
             )
         }
+        ConnectionHistoryCoordinator.connected(text)
     }
 
     fun markDisconnected(text: String = "Sesja zakończona") {
@@ -102,6 +106,7 @@ object TerminalSessionBus {
                 statusText = text,
             )
         }
+        ConnectionHistoryCoordinator.disconnected(text)
     }
 
     fun markError(message: String) {
@@ -113,6 +118,7 @@ object TerminalSessionBus {
                 statusText = message,
             )
         }
+        ConnectionHistoryCoordinator.error(message)
     }
 
     fun append(bytes: ByteArray, length: Int = bytes.size) {
