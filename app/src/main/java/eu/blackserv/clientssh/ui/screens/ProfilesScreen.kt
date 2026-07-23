@@ -73,9 +73,13 @@ fun ProfilesScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(profiles, key = { it.id }) { profile ->
+                    val addressMarker = "${profile.host}:${profile.port}"
+                    val activeFromSession = activeProfileId == profile.id
+                    val activeFromConnectedStatus = activeSessionStatus.startsWith("SSH •") &&
+                        activeSessionStatus.contains(addressMarker, ignoreCase = true)
                     ProfileCard(
                         profile = profile,
-                        active = activeProfileId == profile.id,
+                        active = activeFromSession || activeFromConnectedStatus,
                         status = activeSessionStatus,
                         neon = neon,
                         onEdit = onEdit,
@@ -204,8 +208,14 @@ private fun ProfileCard(
 
 @Composable
 private fun StatusBadge(text: String, active: Boolean, status: String, neon: Boolean) {
-    val connecting = active && listOf("łącz", "przywr", "ponow", "czeka").any { status.contains(it, true) }
-    val color = when { connecting -> NeonAmber; active -> NeonGreen; neon -> Color(0xFF73827C); else -> MaterialTheme.colorScheme.onSurfaceVariant }
+    val connecting = active && !status.startsWith("SSH •") &&
+        listOf("łącz", "przywr", "ponow", "czeka").any { status.contains(it, true) }
+    val color = when {
+        connecting -> NeonAmber
+        active -> NeonGreen
+        neon -> Color(0xFF73827C)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = if (neon) Color(0xFF091510) else MaterialTheme.colorScheme.surfaceVariant,
