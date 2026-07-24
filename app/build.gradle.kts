@@ -15,7 +15,7 @@ android {
         applicationId = "eu.blackserv.clientssh"
         minSdk = 26
         targetSdk = 36
-        versionCode = 28
+        versionCode = 29
         versionName = "0.3.4"
     }
 
@@ -88,5 +88,6 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
+    testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
