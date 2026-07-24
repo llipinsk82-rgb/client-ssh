@@ -17,6 +17,7 @@ jobs:
       CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
       CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
       CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
+      CLIENT_SSH_RELEASE_CERT_SHA256: ${{ secrets.CLIENT_SSH_RELEASE_CERT_SHA256 }}
     steps:
       - uses: actions/checkout@v4
       - name: Reject committed signing secrets
@@ -69,6 +70,7 @@ jobs:
           test -n "$CLIENT_SSH_RELEASE_STORE_PASSWORD"
           test -n "$CLIENT_SSH_RELEASE_KEY_ALIAS"
           test -n "$CLIENT_SSH_RELEASE_KEY_PASSWORD"
+          test -n "$CLIENT_SSH_RELEASE_CERT_SHA256"
       - name: Restore release signing key from secrets
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         shell: bash
@@ -89,15 +91,41 @@ jobs:
             exit 1
           fi
           tail -n 80 build-release.log
-      - name: Verify release signature and checksum
+      - name: Verify release certificate and checksum
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         shell: bash
         run: |
+          set -euo pipefail
           RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           test -s "$RELEASE_APK"
           test -x "$APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs "$RELEASE_APK"
+
+          CERT_OUTPUT="$($APKSIGNER verify --verbose --print-certs "$RELEASE_APK")"
+          printf '%s\n' "$CERT_OUTPUT"
+
+          ACTUAL_CERT_SHA256="$(printf '%s\n' "$CERT_OUTPUT" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
+            | head -n 1 \
+            | tr -d ':[:space:]' \
+            | tr '[:upper:]' '[:lower:]')"
+          EXPECTED_CERT_SHA256="$(printf '%s' "$CLIENT_SSH_RELEASE_CERT_SHA256" \
+            | tr -d ':[:space:]' \
+            | tr '[:upper:]' '[:lower:]')"
+
+          test -n "$ACTUAL_CERT_SHA256"
+          test "${#ACTUAL_CERT_SHA256}" -eq 64
+          test "${#EXPECTED_CERT_SHA256}" -eq 64
+
+          if [[ "$ACTUAL_CERT_SHA256" != "$EXPECTED_CERT_SHA256" ]]; then
+            echo "Release certificate fingerprint mismatch." >&2
+            echo "Expected: $EXPECTED_CERT_SHA256" >&2
+            echo "Actual:   $ACTUAL_CERT_SHA256" >&2
+            exit 1
+          fi
+
+          printf 'Certificate SHA-256: %s\n' "$ACTUAL_CERT_SHA256" \
+            | tee app/build/outputs/apk/release/CERTIFICATE_SHA256.txt
           sha256sum "$RELEASE_APK" | tee app/build/outputs/apk/release/SHA256SUMS.txt
       - name: Upload signed release APK
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
@@ -107,6 +135,7 @@ jobs:
           path: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/apk/release/SHA256SUMS.txt
+            app/build/outputs/apk/release/CERTIFICATE_SHA256.txt
           if-no-files-found: error
           retention-days: 14
       - name: Remove signing key
