@@ -28,6 +28,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
+      - name: Run unit tests
+        shell: bash
+        run: |
+          if ! gradle :app:testDebugUnitTest --stacktrace --console=plain > test.log 2>&1; then
+            tail -n 250 test.log
+            exit 1
+          fi
+          tail -n 80 test.log
       - name: Build debug APK
         shell: bash
         run: |
