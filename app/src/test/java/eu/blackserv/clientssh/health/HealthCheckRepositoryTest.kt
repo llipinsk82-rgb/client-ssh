@@ -1,5 +1,8 @@
 package eu.blackserv.clientssh.health
 
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -101,13 +104,58 @@ class HealthCheckRepositoryTest {
         assertEquals("b", repository.getAll().single().profileId)
     }
 
-    private class MemoryStorage(initial: String? = null) : HealthCheckStorage {
+    @Test
+    fun `concurrent repository instances do not lose profiles`() {
+        val storage = CoordinatedStorage()
+        val first = HealthCheckRepository(storage)
+        val second = HealthCheckRepository(storage)
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+
+        val one = executor.submit {
+            start.await()
+            first.upsert(HealthCheckSnapshot(profileId = "a"))
+        }
+        val two = executor.submit {
+            start.await()
+            second.upsert(HealthCheckSnapshot(profileId = "b"))
+        }
+
+        start.countDown()
+        one.get(3, TimeUnit.SECONDS)
+        two.get(3, TimeUnit.SECONDS)
+        executor.shutdownNow()
+
+        assertEquals(listOf("a", "b"), HealthCheckRepository(storage).getAll().map { it.profileId })
+    }
+
+    private open class MemoryStorage(initial: String? = null) : HealthCheckStorage {
+        @Volatile
         private var value: String? = initial
 
         override fun read(): String? = value
 
         override fun write(value: String) {
             this.value = value
+        }
+    }
+
+    private class CoordinatedStorage : MemoryStorage() {
+        private val firstReadStarted = CountDownLatch(1)
+        private val secondReadStarted = CountDownLatch(1)
+        private var reads = 0
+
+        @Synchronized
+        override fun read(): String? {
+            reads++
+            when (reads) {
+                1 -> {
+                    firstReadStarted.countDown()
+                    secondReadStarted.await(250, TimeUnit.MILLISECONDS)
+                }
+                2 -> secondReadStarted.countDown()
+            }
+            return super.read()
         }
     }
 }
