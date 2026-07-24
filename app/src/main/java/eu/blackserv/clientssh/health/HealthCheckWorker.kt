@@ -36,12 +36,20 @@ class HealthCheckWorker(
             )
 
             val snapshotStorage = SharedPreferencesHealthCheckStorage(applicationContext)
-            HealthCheckRepository(snapshotStorage).applyObservation(
+            val transition = HealthCheckRepository(snapshotStorage).applyObservation(
                 profileId = profileId,
                 observation = observation,
                 now = System.currentTimeMillis(),
                 offlineFailureThreshold = config.offlineFailureThreshold,
             )
+
+            if (transition.notifyStatusChange) {
+                HealthStatusNotifier(applicationContext).notifyStatusChange(
+                    profileId = profileId,
+                    displayName = profile.name.ifBlank { profile.host },
+                    snapshot = transition.snapshot,
+                )
+            }
 
             Result.success()
         }.getOrElse {
