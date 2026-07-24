@@ -70,6 +70,23 @@ jobs:
           fi
           tail -n 80 build-debug.log
           sha256sum app/build/outputs/apk/debug/app-debug.apk | tee app/build/outputs/apk/debug/SHA256SUMS.txt
+      - name: Verify debug APK metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          EXPECTED_PACKAGE="eu.blackserv.clientssh"
+          EXPECTED_VERSION_CODE="$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)"
+          EXPECTED_VERSION_NAME="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
+          BADGING="$($AAPT dump badging "$APK" | head -n 1)"
+          printf '%s\n' "$BADGING"
+          ACTUAL_PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+          ACTUAL_VERSION_CODE="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionCode='\([^']*\)'.*/\1/p")"
+          ACTUAL_VERSION_NAME="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionName='\([^']*\)'.*/\1/p")"
+          test "$ACTUAL_PACKAGE" = "$EXPECTED_PACKAGE"
+          test "$ACTUAL_VERSION_CODE" = "$EXPECTED_VERSION_CODE"
+          test "$ACTUAL_VERSION_NAME" = "$EXPECTED_VERSION_NAME"
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -126,7 +143,7 @@ jobs:
             exit 1
           fi
           tail -n 80 build-release.log
-      - name: Verify release certificate and checksum
+      - name: Verify release metadata, certificate and checksum
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         shell: bash
         env:
@@ -135,8 +152,22 @@ jobs:
           set -euo pipefail
           RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          EXPECTED_PACKAGE="eu.blackserv.clientssh"
+          EXPECTED_VERSION_CODE="$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)"
+          EXPECTED_VERSION_NAME="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
           test -s "$RELEASE_APK"
           test -x "$APKSIGNER"
+          test -x "$AAPT"
+
+          BADGING="$($AAPT dump badging "$RELEASE_APK" | head -n 1)"
+          printf '%s\n' "$BADGING"
+          ACTUAL_PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+          ACTUAL_VERSION_CODE="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionCode='\([^']*\)'.*/\1/p")"
+          ACTUAL_VERSION_NAME="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionName='\([^']*\)'.*/\1/p")"
+          test "$ACTUAL_PACKAGE" = "$EXPECTED_PACKAGE"
+          test "$ACTUAL_VERSION_CODE" = "$EXPECTED_VERSION_CODE"
+          test "$ACTUAL_VERSION_NAME" = "$EXPECTED_VERSION_NAME"
 
           CERT_OUTPUT="$($APKSIGNER verify --verbose --print-certs "$RELEASE_APK")"
           printf '%s\n' "$CERT_OUTPUT"
@@ -161,6 +192,9 @@ jobs:
             exit 1
           fi
 
+          printf 'Package: %s\nVersion code: %s\nVersion name: %s\n' \
+            "$ACTUAL_PACKAGE" "$ACTUAL_VERSION_CODE" "$ACTUAL_VERSION_NAME" \
+            | tee app/build/outputs/apk/release/APK_METADATA.txt
           printf 'Certificate SHA-256: %s\n' "$ACTUAL_CERT_SHA256" \
             | tee app/build/outputs/apk/release/CERTIFICATE_SHA256.txt
           sha256sum "$RELEASE_APK" | tee app/build/outputs/apk/release/SHA256SUMS.txt
@@ -171,6 +205,7 @@ jobs:
           name: client-ssh-release
           path: |
             app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/APK_METADATA.txt
             app/build/outputs/apk/release/SHA256SUMS.txt
             app/build/outputs/apk/release/CERTIFICATE_SHA256.txt
           if-no-files-found: error
