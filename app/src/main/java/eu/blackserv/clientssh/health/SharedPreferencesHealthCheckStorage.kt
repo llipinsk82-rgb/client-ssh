@@ -6,7 +6,7 @@ import android.content.SharedPreferences
 class SharedPreferencesHealthCheckStorage(
     context: Context,
     preferencesName: String = DEFAULT_PREFERENCES_NAME,
-    private val valueKey: String = DEFAULT_VALUE_KEY,
+    private val valueKey: String = SNAPSHOTS_VALUE_KEY,
 ) : HealthCheckStorage {
     private val preferences: SharedPreferences = context.applicationContext.getSharedPreferences(
         preferencesName,
@@ -23,6 +23,7 @@ class SharedPreferencesHealthCheckStorage(
 
     companion object {
         const val DEFAULT_PREFERENCES_NAME = "health_check_monitor"
-        const val DEFAULT_VALUE_KEY = "snapshots_v1"
+        const val SNAPSHOTS_VALUE_KEY = "snapshots_v1"
+        const val CONFIG_VALUE_KEY = "config_v1"
     }
 }
