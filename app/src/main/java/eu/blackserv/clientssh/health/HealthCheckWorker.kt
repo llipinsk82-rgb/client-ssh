@@ -30,9 +30,16 @@ class HealthCheckWorker(
             val snapshotRepository = HealthCheckRepository(
                 SharedPreferencesHealthCheckStorage(applicationContext),
             )
+            val historyRepository = HealthCheckHistoryRepository(
+                SharedPreferencesHealthCheckStorage(
+                    context = applicationContext,
+                    valueKey = SharedPreferencesHealthCheckStorage.HISTORY_VALUE_KEY,
+                ),
+            )
             val transition = HealthCheckExecutor(
                 snapshotRepository = snapshotRepository,
                 probe = TcpHealthProbe(),
+                historyRepository = historyRepository,
             ).execute(
                 profileId = profileId,
                 target = HealthTarget(
