@@ -48,6 +48,11 @@ object TerminalSessionBus {
     private var writer: ((ByteArray) -> Unit)? = null
 
     fun begin(profile: HostProfile) {
+        val current = _snapshot.value
+        val sameSessionAlreadyActive = current.profileId == profile.id &&
+            current.state in setOf(TerminalConnectionState.CONNECTING, TerminalConnectionState.CONNECTED)
+        if (sameSessionAlreadyActive) return
+
         writer = null
         val status = "Łączenie z ${profile.host}:${profile.port}…"
         ConnectionHistoryCoordinator.begin(profile, status)
