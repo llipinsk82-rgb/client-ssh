@@ -8,17 +8,15 @@ interface HealthCheckStorage {
 class HealthCheckRepository(
     private val storage: HealthCheckStorage,
 ) {
-    private val lock = Any()
-
-    fun get(profileId: String): HealthCheckSnapshot? = synchronized(lock) {
+    fun get(profileId: String): HealthCheckSnapshot? = synchronized(REPOSITORY_LOCK) {
         loadAll()[profileId]
     }
 
-    fun getAll(): List<HealthCheckSnapshot> = synchronized(lock) {
+    fun getAll(): List<HealthCheckSnapshot> = synchronized(REPOSITORY_LOCK) {
         loadAll().values.sortedBy { it.profileId }
     }
 
-    fun upsert(snapshot: HealthCheckSnapshot): HealthCheckSnapshot = synchronized(lock) {
+    fun upsert(snapshot: HealthCheckSnapshot): HealthCheckSnapshot = synchronized(REPOSITORY_LOCK) {
         require(snapshot.profileId.isNotBlank()) { "profileId must not be blank" }
         val all = loadAll().toMutableMap()
         all[snapshot.profileId] = snapshot
@@ -26,7 +24,7 @@ class HealthCheckRepository(
         snapshot
     }
 
-    fun remove(profileId: String): Boolean = synchronized(lock) {
+    fun remove(profileId: String): Boolean = synchronized(REPOSITORY_LOCK) {
         val all = loadAll().toMutableMap()
         val removed = all.remove(profileId) != null
         if (removed) persist(all)
@@ -38,7 +36,7 @@ class HealthCheckRepository(
         observation: HealthObservation,
         now: Long,
         offlineFailureThreshold: Int,
-    ): HealthCheckTransition = synchronized(lock) {
+    ): HealthCheckTransition = synchronized(REPOSITORY_LOCK) {
         val all = loadAll().toMutableMap()
         val transition = HealthCheckStateMachine.apply(
             profileId = profileId,
@@ -57,6 +55,12 @@ class HealthCheckRepository(
 
     private fun persist(items: Map<String, HealthCheckSnapshot>) {
         storage.write(HealthCheckSnapshotCodec.encode(items.values))
+    }
+
+    private companion object {
+        // Repository instances can coexist in workers, activities and after process recreation.
+        // A process-wide lock prevents independent read-modify-write cycles from losing data.
+        val REPOSITORY_LOCK = Any()
     }
 }
 
