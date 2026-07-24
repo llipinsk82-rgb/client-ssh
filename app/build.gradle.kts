@@ -83,6 +83,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.github.mwiede:jsch:2.28.2")
     // JSch uses Bouncy Castle for Ed25519 and encrypted PuTTY PPK v3 keys on Android.
