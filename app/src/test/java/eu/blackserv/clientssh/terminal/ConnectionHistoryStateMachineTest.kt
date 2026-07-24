@@ -96,6 +96,53 @@ class ConnectionHistoryStateMachineTest {
     }
 
     @Test
+    fun connectedAfterProcessRestartKeepsPersistedSessionIdentity() {
+        val profile = profile("one")
+        val persistedOpen = entry(profile, startedAt = 100L)
+
+        val reconnectTransition = ConnectionHistoryStateMachine.reconnecting(
+            profile = profile,
+            status = "Przywracanie sesji…",
+            now = 700L,
+            current = null,
+            persistedOpen = persistedOpen,
+            persistedLatestOpen = persistedOpen,
+        )
+        val connectedTransition = ConnectionHistoryStateMachine.connected(
+            status = "SSH • one.example.com:22 • Session Keeper",
+            current = reconnectTransition.current,
+            persistedLatestOpen = persistedOpen,
+        )
+
+        assertEquals(persistedOpen.id, reconnectTransition.current?.id)
+        assertEquals(persistedOpen.id, connectedTransition.current?.id)
+        assertEquals(100L, connectedTransition.current?.startedAt)
+        assertEquals(1, connectedTransition.changed.size)
+        assertNull(connectedTransition.changed.single().finishedAt)
+    }
+
+    @Test
+    fun finishAfterProcessRestartClosesPersistedSession() {
+        val profile = profile("one")
+        val persistedOpen = entry(profile, startedAt = 100L)
+
+        val transition = ConnectionHistoryStateMachine.finish(
+            result = ConnectionHistoryResult.DISCONNECTED,
+            status = "Rozłączono ręcznie",
+            now = 800L,
+            current = null,
+            persistedLatestOpen = persistedOpen,
+        )
+
+        assertNull(transition.current)
+        assertEquals(1, transition.changed.size)
+        assertEquals(persistedOpen.id, transition.changed.single().id)
+        assertEquals(800L, transition.changed.single().finishedAt)
+        assertEquals(ConnectionHistoryResult.DISCONNECTED, transition.changed.single().result)
+        assertEquals("Rozłączono ręcznie", transition.changed.single().message)
+    }
+
+    @Test
     fun finishClosesOpenEntryWithError() {
         val profile = profile("one")
         val open = entry(profile, startedAt = 100L)
