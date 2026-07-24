@@ -4,6 +4,7 @@ class HealthMonitorController(
     private val configRepository: HealthMonitorConfigRepository,
     private val snapshotRepository: HealthCheckRepository,
     private val scheduler: HealthWorkScheduler,
+    private val historyRepository: HealthCheckHistoryRepository? = null,
 ) {
     fun save(config: HealthMonitorConfig): HealthMonitorConfig {
         val saved = configRepository.upsert(config)
@@ -22,5 +23,6 @@ class HealthMonitorController(
         scheduler.cancel(profileId)
         configRepository.remove(profileId)
         snapshotRepository.remove(profileId)
+        historyRepository?.removeProfile(profileId)
     }
 }
