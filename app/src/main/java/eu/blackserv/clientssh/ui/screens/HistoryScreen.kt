@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Replay
@@ -75,6 +76,7 @@ fun HistoryScreen() {
     val store = remember(context.applicationContext) { LocalAppStore(context.applicationContext) }
     var entries by remember { mutableStateOf(store.loadConnectionHistory()) }
     var confirmClear by remember { mutableStateOf(false) }
+    var entryPendingDelete by remember { mutableStateOf<ConnectionHistoryEntry?>(null) }
     val profilesById = remember(entries) { store.loadProfiles().associateBy { it.id } }
 
     fun reconnect(profile: HostProfile) {
@@ -90,6 +92,13 @@ fun HistoryScreen() {
                 .setAction(MainActivity.ACTION_OPEN_ACTIVE_TERMINAL)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
         )
+    }
+
+    fun deleteEntry(entry: ConnectionHistoryEntry) {
+        val updated = entries.filterNot { it.id == entry.id }
+        store.saveConnectionHistory(updated)
+        entries = updated
+        entryPendingDelete = null
     }
 
     Scaffold(
@@ -143,6 +152,7 @@ fun HistoryScreen() {
                         secondaryText = secondaryText,
                         profileAvailable = profile != null,
                         onReconnect = profile?.let { { reconnect(it) } },
+                        onDelete = if (entry.finishedAt == null) null else { { entryPendingDelete = entry } },
                     )
                 }
             }
@@ -153,17 +163,40 @@ fun HistoryScreen() {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("Wyczyścić historię?") },
-            text = { Text("Usunięte zostaną wyłącznie wpisy historii. Profile i dane logowania pozostaną bez zmian.") },
+            text = { Text("Usunięte zostaną wyłącznie zakończone wpisy historii. Aktywna sesja pozostanie widoczna.") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        store.clearConnectionHistory()
-                        entries = emptyList()
+                        val activeEntries = entries.filter { it.finishedAt == null }
+                        store.saveConnectionHistory(activeEntries)
+                        entries = activeEntries
                         confirmClear = false
                     },
                 ) { Text("Wyczyść", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Anuluj") } },
+        )
+    }
+
+    entryPendingDelete?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { entryPendingDelete = null },
+            title = { Text("Usunąć wpis historii?") },
+            text = {
+                Text(
+                    "${entry.profileName.ifBlank { entry.host }}\n" +
+                        "${entry.username}@${entry.host}:${entry.port}\n" +
+                        formatTimestamp(entry.startedAt),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { deleteEntry(entry) }) {
+                    Text("Usuń", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { entryPendingDelete = null }) { Text("Anuluj") }
+            },
         )
     }
 }
@@ -203,6 +236,7 @@ private fun HistoryCard(
     secondaryText: Color,
     profileAvailable: Boolean,
     onReconnect: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
 ) {
     val resultColor = when {
         entry.finishedAt == null -> Color(0xFF58FF94)
@@ -248,6 +282,16 @@ private fun HistoryCard(
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+                IconButton(
+                    onClick = { onDelete?.invoke() },
+                    enabled = onDelete != null,
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = if (onDelete == null) "Nie można usunąć aktywnej sesji" else "Usuń wpis",
+                        tint = if (onDelete == null) secondaryText.copy(alpha = .25f) else Color(0xFFFF7187),
                     )
                 }
             }
