@@ -11,11 +11,16 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
+interface HealthWorkScheduler {
+    fun schedule(config: HealthMonitorConfig)
+    fun cancel(profileId: String)
+}
+
 class HealthMonitorScheduler(
     context: Context,
     private val workManager: WorkManager = WorkManager.getInstance(context.applicationContext),
-) {
-    fun schedule(config: HealthMonitorConfig) {
+) : HealthWorkScheduler {
+    override fun schedule(config: HealthMonitorConfig) {
         if (!config.enabled) {
             cancel(config.profileId)
             return
@@ -47,7 +52,7 @@ class HealthMonitorScheduler(
         )
     }
 
-    fun cancel(profileId: String) {
+    override fun cancel(profileId: String) {
         require(profileId.isNotBlank()) { "profileId must not be blank" }
         workManager.cancelUniqueWork(uniqueWorkName(profileId))
     }
