@@ -19,6 +19,9 @@ jobs:
       CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+      - name: Reject committed signing secrets
+        shell: bash
+        run: bash scripts/check-no-release-secrets.sh
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
