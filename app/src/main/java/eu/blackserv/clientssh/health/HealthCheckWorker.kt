@@ -27,19 +27,19 @@ class HealthCheckWorker(
                 .firstOrNull { it.id == profileId }
                 ?: return Result.success()
 
-            val observation = TcpHealthProbe().check(
-                HealthTarget(
+            val snapshotRepository = HealthCheckRepository(
+                SharedPreferencesHealthCheckStorage(applicationContext),
+            )
+            val transition = HealthCheckExecutor(
+                snapshotRepository = snapshotRepository,
+                probe = TcpHealthProbe(),
+            ).execute(
+                profileId = profileId,
+                target = HealthTarget(
                     host = profile.host,
                     port = profile.port,
                     timeoutMs = config.timeoutMs,
                 ),
-            )
-
-            val snapshotStorage = SharedPreferencesHealthCheckStorage(applicationContext)
-            val transition = HealthCheckRepository(snapshotStorage).applyObservation(
-                profileId = profileId,
-                observation = observation,
-                now = System.currentTimeMillis(),
                 offlineFailureThreshold = config.offlineFailureThreshold,
             )
 
