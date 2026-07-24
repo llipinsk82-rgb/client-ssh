@@ -24,6 +24,7 @@ object ConnectionHistoryCoordinator {
                 now = System.currentTimeMillis(),
                 current = currentEntry,
                 persistedOpen = findOpenEntry(profile.id),
+                persistedLatestOpen = findLatestOpenEntry(),
             ),
         )
     }
@@ -36,6 +37,7 @@ object ConnectionHistoryCoordinator {
                 now = System.currentTimeMillis(),
                 current = currentEntry,
                 persistedOpen = findOpenEntry(profile.id),
+                persistedLatestOpen = findLatestOpenEntry(),
             ),
         )
     }
