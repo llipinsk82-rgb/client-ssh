@@ -7,23 +7,31 @@ import android.util.Base64
 import eu.blackserv.clientssh.model.AppSettings
 import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.AuthenticationMethod
+import eu.blackserv.clientssh.model.ConnectionHistoryEntry
+import eu.blackserv.clientssh.model.ConnectionHistoryResult
 import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.model.defaultFavoriteCommands
+import eu.blackserv.clientssh.terminal.ConnectionHistoryCoordinator
 import java.security.KeyStore
 import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import kotlin.math.abs
 import org.json.JSONArray
 import org.json.JSONObject
 
 class LocalAppStore(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    init {
+        ConnectionHistoryCoordinator.initialize(this)
+    }
 
     fun loadProfiles(): List<HostProfile> =
         loadProfilesFrom(KEY_PROFILES).ifEmpty { loadProfilesFrom(KEY_PROFILES_BACKUP) }
@@ -65,6 +73,63 @@ class LocalAppStore(context: Context) {
         prefs.edit().putString(KEY_FAVORITES, array.toString()).commit()
     }
 
+    fun loadConnectionHistory(): List<ConnectionHistoryEntry> = synchronized(HISTORY_LOCK) {
+        loadConnectionHistoryUnlocked()
+    }
+
+    fun saveConnectionHistory(entries: List<ConnectionHistoryEntry>) = synchronized(HISTORY_LOCK) {
+        saveConnectionHistoryUnlocked(entries)
+    }
+
+    fun upsertConnectionHistory(entry: ConnectionHistoryEntry): List<ConnectionHistoryEntry> =
+        mutateConnectionHistory { history ->
+            val index = history.indexOfFirst { it.id == entry.id }
+            if (index >= 0) history[index] = entry else history.add(0, entry)
+        }
+
+    fun removeConnectionHistoryEntry(entryId: String): List<ConnectionHistoryEntry> =
+        mutateConnectionHistory { history ->
+            history.removeAll { it.id == entryId && it.finishedAt != null }
+        }
+
+    fun clearFinishedConnectionHistory(): List<ConnectionHistoryEntry> =
+        mutateConnectionHistory { history ->
+            history.removeAll { it.finishedAt != null }
+        }
+
+    fun clearConnectionHistory() = synchronized(HISTORY_LOCK) {
+        prefs.edit().remove(KEY_CONNECTION_HISTORY).commit()
+    }
+
+    private inline fun mutateConnectionHistory(
+        mutation: (MutableList<ConnectionHistoryEntry>) -> Unit,
+    ): List<ConnectionHistoryEntry> = synchronized(HISTORY_LOCK) {
+        val history = loadConnectionHistoryUnlocked().toMutableList()
+        mutation(history)
+        saveConnectionHistoryUnlocked(history)
+        loadConnectionHistoryUnlocked()
+    }
+
+    private fun loadConnectionHistoryUnlocked(): List<ConnectionHistoryEntry> {
+        val raw = prefs.getString(KEY_CONNECTION_HISTORY, "[]").orEmpty()
+        val array = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                runCatching { item.toConnectionHistoryEntry() }.getOrNull()?.let { add(it) }
+            }
+        }.sortedByDescending { it.startedAt }
+    }
+
+    private fun saveConnectionHistoryUnlocked(entries: List<ConnectionHistoryEntry>) {
+        val array = JSONArray()
+        deduplicateHistory(entries)
+            .sortedByDescending { it.startedAt }
+            .take(MAX_HISTORY_ENTRIES)
+            .forEach { entry -> array.put(entry.toJson()) }
+        prefs.edit().putString(KEY_CONNECTION_HISTORY, array.toString()).commit()
+    }
+
     fun loadAppSettings(): AppSettings = AppSettings(
         skin = enumValueOrDefault(
             prefs.getString(KEY_APP_SKIN, AppSkin.GRAPHITE.name).orEmpty(),
@@ -86,6 +151,50 @@ class LocalAppStore(context: Context) {
             .putBoolean(KEY_KEEP_SCREEN_AWAKE, settings.keepScreenAwake)
             .putBoolean(KEY_BACKGROUND_SESSION_ENABLED, settings.backgroundSessionEnabled)
             .commit()
+    }
+
+    private fun deduplicateHistory(entries: List<ConnectionHistoryEntry>): List<ConnectionHistoryEntry> {
+        val result = mutableListOf<ConnectionHistoryEntry>()
+        entries.sortedByDescending { it.startedAt }.forEach { candidate ->
+            val duplicateIndex = result.indexOfFirst { existing ->
+                existing.profileId == candidate.profileId &&
+                    abs(existing.startedAt - candidate.startedAt) <= HISTORY_DUPLICATE_WINDOW_MS &&
+                    sessionsOverlap(existing, candidate)
+            }
+            if (duplicateIndex < 0) {
+                result += candidate
+            } else {
+                result[duplicateIndex] = mergeHistoryEntries(result[duplicateIndex], candidate)
+            }
+        }
+        return result
+    }
+
+    private fun sessionsOverlap(first: ConnectionHistoryEntry, second: ConnectionHistoryEntry): Boolean {
+        val firstEnd = first.finishedAt ?: Long.MAX_VALUE
+        val secondEnd = second.finishedAt ?: Long.MAX_VALUE
+        return maxOf(first.startedAt, second.startedAt) <= minOf(firstEnd, secondEnd) + 1_000L
+    }
+
+    private fun mergeHistoryEntries(
+        first: ConnectionHistoryEntry,
+        second: ConnectionHistoryEntry,
+    ): ConnectionHistoryEntry {
+        val preferred = if (first.startedAt <= second.startedAt) first else second
+        val result = when {
+            first.result == ConnectionHistoryResult.ERROR || second.result == ConnectionHistoryResult.ERROR ->
+                ConnectionHistoryResult.ERROR
+            first.finishedAt != null || second.finishedAt != null -> ConnectionHistoryResult.DISCONNECTED
+            else -> ConnectionHistoryResult.CONNECTED
+        }
+        val finishedAt = listOfNotNull(first.finishedAt, second.finishedAt).maxOrNull()
+        val messageSource = listOf(first, second).maxByOrNull { it.finishedAt ?: it.startedAt } ?: preferred
+        return preferred.copy(
+            startedAt = minOf(first.startedAt, second.startedAt),
+            finishedAt = finishedAt,
+            result = result,
+            message = messageSource.message.ifBlank { preferred.message },
+        )
     }
 
     private fun HostProfile.toJson(): JSONObject = JSONObject()
@@ -124,6 +233,33 @@ class LocalAppStore(context: Context) {
         name = optString("name").trim(),
         command = optString("command"),
         runImmediately = optBoolean("runImmediately", false),
+    )
+
+    private fun ConnectionHistoryEntry.toJson(): JSONObject = JSONObject()
+        .put("id", id)
+        .put("profileId", profileId)
+        .put("profileName", profileName)
+        .put("host", host)
+        .put("port", port)
+        .put("username", username)
+        .put("protocol", protocol.name)
+        .put("startedAt", startedAt)
+        .put("finishedAt", finishedAt ?: JSONObject.NULL)
+        .put("result", result.name)
+        .put("message", message)
+
+    private fun JSONObject.toConnectionHistoryEntry(): ConnectionHistoryEntry = ConnectionHistoryEntry(
+        id = optString("id").ifBlank { UUID.randomUUID().toString() },
+        profileId = optString("profileId"),
+        profileName = optString("profileName"),
+        host = optString("host"),
+        port = optInt("port", 22),
+        username = optString("username"),
+        protocol = enumValueOrDefault(optString("protocol"), ConnectionProtocol.SSH),
+        startedAt = optLong("startedAt"),
+        finishedAt = if (isNull("finishedAt")) null else optLong("finishedAt"),
+        result = enumValueOrDefault(optString("result"), ConnectionHistoryResult.DISCONNECTED),
+        message = optString("message"),
     )
 
     private fun encryptOrBlank(value: String): String =
@@ -173,10 +309,12 @@ class LocalAppStore(context: Context) {
         runCatching { enumValueOf<T>(raw) }.getOrDefault(default)
 
     companion object {
+        private val HISTORY_LOCK = Any()
         private const val PREFS_NAME = "client_ssh_store"
         private const val KEY_PROFILES = "profiles"
         private const val KEY_PROFILES_BACKUP = "profiles_backup"
         private const val KEY_FAVORITES = "favorites"
+        private const val KEY_CONNECTION_HISTORY = "connection_history"
         private const val KEY_APP_SKIN = "app_skin"
         private const val KEY_KEEP_SCREEN_AWAKE = "keep_screen_awake"
         private const val KEY_BACKGROUND_SESSION_ENABLED = "background_session_enabled"
@@ -184,5 +322,7 @@ class LocalAppStore(context: Context) {
         private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val GCM_TAG_BITS = 128
+        private const val MAX_HISTORY_ENTRIES = 250
+        private const val HISTORY_DUPLICATE_WINDOW_MS = 3_000L
     }
 }

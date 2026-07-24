@@ -48,12 +48,19 @@ object TerminalSessionBus {
     private var writer: ((ByteArray) -> Unit)? = null
 
     fun begin(profile: HostProfile) {
+        val current = _snapshot.value
+        val sameSessionAlreadyActive = current.profileId == profile.id &&
+            current.state in setOf(TerminalConnectionState.CONNECTING, TerminalConnectionState.CONNECTED)
+        if (sameSessionAlreadyActive) return
+
         writer = null
+        val status = "Łączenie z ${profile.host}:${profile.port}…"
+        ConnectionHistoryCoordinator.begin(profile, status)
         _snapshot.value = TerminalSnapshot(
             profileId = profile.id,
             profileName = profile.name,
             state = TerminalConnectionState.CONNECTING,
-            statusText = "Łączenie z ${profile.host}:${profile.port}…",
+            statusText = status,
             output = "Łączenie z ${profile.username}@${profile.host}:${profile.port}…\n",
         )
     }
@@ -64,6 +71,7 @@ object TerminalSessionBus {
         notice: String = status,
     ) {
         writer = null
+        ConnectionHistoryCoordinator.reconnecting(profile, status)
         _snapshot.update { current ->
             val previousOutput = if (current.profileId == profile.id) current.output else ""
             val combined = previousOutput + "\n[Session Keeper] $notice\n"
@@ -86,6 +94,7 @@ object TerminalSessionBus {
     }
 
     fun markConnected(text: String = "Połączono") {
+        ConnectionHistoryCoordinator.connected(text)
         _snapshot.update {
             it.copy(
                 state = TerminalConnectionState.CONNECTED,
@@ -96,6 +105,7 @@ object TerminalSessionBus {
 
     fun markDisconnected(text: String = "Sesja zakończona") {
         writer = null
+        ConnectionHistoryCoordinator.disconnected(text)
         _snapshot.update {
             it.copy(
                 state = TerminalConnectionState.DISCONNECTED,
@@ -106,6 +116,7 @@ object TerminalSessionBus {
 
     fun markError(message: String) {
         writer = null
+        ConnectionHistoryCoordinator.error(message)
         append("\n[Błąd] $message\n")
         _snapshot.update {
             it.copy(

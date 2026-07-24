@@ -5,7 +5,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val updateKeystoreFile = layout.projectDirectory.file("signing/client-ssh-update.jks").asFile
+val releaseKeystoreFile = layout.projectDirectory.file("signing/client-ssh-release.jks").asFile
+val releaseStorePassword = System.getenv("CLIENT_SSH_RELEASE_STORE_PASSWORD").orEmpty()
+val releaseKeyAlias = System.getenv("CLIENT_SSH_RELEASE_KEY_ALIAS").orEmpty()
+val releaseKeyPassword = System.getenv("CLIENT_SSH_RELEASE_KEY_PASSWORD").orEmpty()
+val releaseSigningAvailable = releaseKeystoreFile.exists() &&
+    releaseStorePassword.isNotBlank() &&
+    releaseKeyAlias.isNotBlank() &&
+    releaseKeyPassword.isNotBlank()
 
 android {
     namespace = "eu.blackserv.clientssh"
@@ -15,28 +22,31 @@ android {
         applicationId = "eu.blackserv.clientssh"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.3.3"
+        versionCode = 37
+        versionName = "0.3.4"
     }
 
     signingConfigs {
-        create("update") {
-            storeFile = updateKeystoreFile
-            storePassword = "android"
-            keyAlias = "blackserv-update"
-            keyPassword = "android"
+        if (releaseSigningAvailable) {
+            create("releaseSecure") {
+                storeFile = releaseKeystoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
         }
     }
 
     buildTypes {
         debug {
-            if (updateKeystoreFile.exists()) {
-                signingConfig = signingConfigs.getByName("update")
-            }
+            // Debug builds always use Android's generated debug key.
+            // Release credentials are never exposed to pull-request builds.
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("update")
+            if (releaseSigningAvailable) {
+                signingConfig = signingConfigs.getByName("releaseSecure")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -88,5 +98,6 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
+    testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
