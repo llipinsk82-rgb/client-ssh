@@ -3,6 +3,7 @@ package eu.blackserv.clientssh.health
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -87,6 +88,44 @@ class HealthCheckStateMachineTest {
         assertFalse(remainsOnline.notifyStatusChange)
     }
 
+    @Test
+    fun staleObservationCannotOverwriteNewerState() {
+        val current = snapshot(
+            status = HealthStatus.ONLINE,
+            consecutiveFailures = 0,
+            lastCheckedAt = 2000L,
+            lastSuccessAt = 2000L,
+        )
+
+        val stale = apply(
+            current = current,
+            observation = HealthObservation.Failure("Delayed timeout"),
+            now = 1000L,
+            threshold = 1,
+        )
+
+        assertSame(current, stale.snapshot)
+        assertFalse(stale.notifyStatusChange)
+    }
+
+    @Test
+    fun failureCounterSaturatesAtIntegerMaximum() {
+        val current = snapshot(
+            status = HealthStatus.OFFLINE,
+            consecutiveFailures = Int.MAX_VALUE,
+        )
+
+        val transition = apply(
+            current = current,
+            observation = HealthObservation.Failure("Still offline"),
+            threshold = 3,
+        )
+
+        assertEquals(Int.MAX_VALUE, transition.snapshot.consecutiveFailures)
+        assertEquals(HealthStatus.OFFLINE, transition.snapshot.status)
+        assertFalse(transition.notifyStatusChange)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsSnapshotFromAnotherProfile() {
         HealthCheckStateMachine.apply(
@@ -111,11 +150,12 @@ class HealthCheckStateMachineTest {
         current: HealthCheckSnapshot?,
         observation: HealthObservation,
         threshold: Int = 3,
+        now: Long = 1000L,
     ): HealthCheckTransition = HealthCheckStateMachine.apply(
         profileId = "profile-a",
         current = current,
         observation = observation,
-        now = 1000L,
+        now = now,
         offlineFailureThreshold = threshold,
     )
 
@@ -123,11 +163,13 @@ class HealthCheckStateMachineTest {
         profileId: String = "profile-a",
         status: HealthStatus = HealthStatus.UNKNOWN,
         consecutiveFailures: Int = 0,
+        lastCheckedAt: Long? = null,
         lastSuccessAt: Long? = null,
     ) = HealthCheckSnapshot(
         profileId = profileId,
         status = status,
         consecutiveFailures = consecutiveFailures,
+        lastCheckedAt = lastCheckedAt,
         lastSuccessAt = lastSuccessAt,
         responseTimeMs = 50L,
     )
