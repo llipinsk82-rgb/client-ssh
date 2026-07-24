@@ -56,14 +56,14 @@ class HealthStatusNotifier(
         val content = healthNotificationContent(displayName, snapshot)
         val openAppIntent = PendingIntent.getActivity(
             context,
-            0,
+            notificationId(profileId),
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_terminal)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(content.title)
             .setContentText(content.text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(content.text))
@@ -101,7 +101,9 @@ class HealthStatusNotifier(
     companion object {
         const val CHANNEL_ID = "health_check_status"
 
-        internal fun notificationId(profileId: String): Int =
-            0x48000000 or (profileId.hashCode() and 0x00ffffff)
+        internal fun notificationId(profileId: String): Int {
+            require(profileId.isNotBlank()) { "profileId must not be blank" }
+            return 0x48000000 or (profileId.hashCode() and 0x00ffffff)
+        }
     }
 }
