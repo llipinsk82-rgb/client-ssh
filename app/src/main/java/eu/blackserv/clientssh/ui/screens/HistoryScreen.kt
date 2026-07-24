@@ -34,6 +34,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,10 +76,15 @@ fun HistoryScreen() {
     val primaryText = if (neon) neonPrimaryText else MaterialTheme.colorScheme.onSurface
     val secondaryText = if (neon) neonSecondaryText else MaterialTheme.colorScheme.onSurfaceVariant
     val store = remember(context.applicationContext) { LocalAppStore(context.applicationContext) }
+    val session by TerminalSessionBus.snapshot.collectAsState()
     var entries by remember { mutableStateOf(store.loadConnectionHistory()) }
     var confirmClear by remember { mutableStateOf(false) }
     var entryPendingDelete by remember { mutableStateOf<ConnectionHistoryEntry?>(null) }
     val profilesById = remember(entries) { store.loadProfiles().associateBy { it.id } }
+
+    LaunchedEffect(session.profileId, session.state, session.statusText) {
+        entries = store.loadConnectionHistory()
+    }
 
     fun reconnect(profile: HostProfile) {
         PendingSessionRegistry.put(profile)
@@ -95,9 +102,7 @@ fun HistoryScreen() {
     }
 
     fun deleteEntry(entry: ConnectionHistoryEntry) {
-        val updated = entries.filterNot { it.id == entry.id }
-        store.saveConnectionHistory(updated)
-        entries = updated
+        entries = store.removeConnectionHistoryEntry(entry.id)
         entryPendingDelete = null
     }
 
@@ -167,9 +172,7 @@ fun HistoryScreen() {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val activeEntries = entries.filter { it.finishedAt == null }
-                        store.saveConnectionHistory(activeEntries)
-                        entries = activeEntries
+                        entries = store.clearFinishedConnectionHistory()
                         confirmClear = false
                     },
                 ) { Text("Wyczyść", color = MaterialTheme.colorScheme.error) }
