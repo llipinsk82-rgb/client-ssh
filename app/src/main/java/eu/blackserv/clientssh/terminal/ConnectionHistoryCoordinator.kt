@@ -80,10 +80,6 @@ object ConnectionHistoryCoordinator {
         store?.loadConnectionHistory()?.firstOrNull { it.finishedAt == null }
 
     private fun persist(entry: ConnectionHistoryEntry) {
-        val appStore = store ?: return
-        val history = appStore.loadConnectionHistory().toMutableList()
-        val index = history.indexOfFirst { it.id == entry.id }
-        if (index >= 0) history[index] = entry else history.add(0, entry)
-        appStore.saveConnectionHistory(history)
+        store?.upsertConnectionHistory(entry)
     }
 }
