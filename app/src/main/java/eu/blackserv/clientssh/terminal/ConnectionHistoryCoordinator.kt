@@ -17,55 +17,37 @@ object ConnectionHistoryCoordinator {
     }
 
     fun begin(profile: HostProfile, status: String) = synchronized(lock) {
-        val now = System.currentTimeMillis()
-        val existing = findOpenEntry(profile.id)
-        if (existing != null) {
-            currentEntry = existing.copy(message = status).also(::persist)
-            return@synchronized
-        }
-
-        currentEntry?.takeIf { it.finishedAt == null && it.profileId != profile.id }?.let { previous ->
-            persist(
-                previous.copy(
-                    finishedAt = now,
-                    result = ConnectionHistoryResult.DISCONNECTED,
-                    message = "Uruchomiono inną sesję.",
-                ),
-            )
-        }
-
-        currentEntry = ConnectionHistoryEntry(
-            profileId = profile.id,
-            profileName = profile.name,
-            host = profile.host,
-            port = profile.port,
-            username = profile.username,
-            protocol = profile.protocol,
-            startedAt = now,
-            result = ConnectionHistoryResult.CONNECTED,
-            message = status,
-        ).also(::persist)
+        applyTransition(
+            ConnectionHistoryStateMachine.begin(
+                profile = profile,
+                status = status,
+                now = System.currentTimeMillis(),
+                current = currentEntry,
+                persistedOpen = findOpenEntry(profile.id),
+            ),
+        )
     }
 
     fun reconnecting(profile: HostProfile, status: String) = synchronized(lock) {
-        val entry = currentEntry
-            ?.takeIf { it.profileId == profile.id && it.finishedAt == null }
-            ?: findOpenEntry(profile.id)
-
-        if (entry != null) {
-            currentEntry = entry.copy(message = status).also(::persist)
-        } else {
-            begin(profile, status)
-        }
+        applyTransition(
+            ConnectionHistoryStateMachine.reconnecting(
+                profile = profile,
+                status = status,
+                now = System.currentTimeMillis(),
+                current = currentEntry,
+                persistedOpen = findOpenEntry(profile.id),
+            ),
+        )
     }
 
     fun connected(status: String) = synchronized(lock) {
-        val entry = currentEntry ?: findLatestOpenEntry() ?: return@synchronized
-        currentEntry = entry.copy(
-            finishedAt = null,
-            result = ConnectionHistoryResult.CONNECTED,
-            message = status,
-        ).also(::persist)
+        applyTransition(
+            ConnectionHistoryStateMachine.connected(
+                status = status,
+                current = currentEntry,
+                persistedLatestOpen = findLatestOpenEntry(),
+            ),
+        )
     }
 
     fun disconnected(status: String) = finish(ConnectionHistoryResult.DISCONNECTED, status)
@@ -73,15 +55,20 @@ object ConnectionHistoryCoordinator {
     fun error(status: String) = finish(ConnectionHistoryResult.ERROR, status)
 
     private fun finish(result: ConnectionHistoryResult, status: String) = synchronized(lock) {
-        val entry = currentEntry ?: findLatestOpenEntry() ?: return@synchronized
-        persist(
-            entry.copy(
-                finishedAt = System.currentTimeMillis(),
+        applyTransition(
+            ConnectionHistoryStateMachine.finish(
                 result = result,
-                message = status,
+                status = status,
+                now = System.currentTimeMillis(),
+                current = currentEntry,
+                persistedLatestOpen = findLatestOpenEntry(),
             ),
         )
-        currentEntry = null
+    }
+
+    private fun applyTransition(transition: HistoryTransition) {
+        transition.changed.forEach(::persist)
+        currentEntry = transition.current
     }
 
     private fun findOpenEntry(profileId: String): ConnectionHistoryEntry? =
