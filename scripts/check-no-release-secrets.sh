@@ -2,6 +2,7 @@
 set -euo pipefail
 
 fail=0
+self_path="scripts/check-no-release-secrets.sh"
 
 mapfile -t tracked_files < <(git ls-files)
 
@@ -14,7 +15,8 @@ fi
 
 mapfile -t text_files < <(
   printf '%s\n' "${tracked_files[@]}" |
-    grep -E '\.(gradle|gradle\.kts|kts|kt|java|yml|yaml|properties|json|xml|sh|md)$' || true
+    grep -E '\.(gradle|gradle\.kts|kts|kt|java|yml|yaml|properties|json|xml|sh|md)$' |
+    grep -Fxv "$self_path" || true
 )
 
 if ((${#text_files[@]} > 0)); then
