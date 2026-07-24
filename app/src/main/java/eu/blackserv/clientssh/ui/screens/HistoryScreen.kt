@@ -62,6 +62,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
+import kotlinx.coroutines.delay
 
 private val historyDateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy  HH:mm:ss")
 private val neonPrimaryText = Color(0xFFF2F7F4)
@@ -78,12 +79,22 @@ fun HistoryScreen() {
     val store = remember(context.applicationContext) { LocalAppStore(context.applicationContext) }
     val session by TerminalSessionBus.snapshot.collectAsState()
     var entries by remember { mutableStateOf(store.loadConnectionHistory()) }
+    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
     var confirmClear by remember { mutableStateOf(false) }
     var entryPendingDelete by remember { mutableStateOf<ConnectionHistoryEntry?>(null) }
     val profilesById = remember(entries) { store.loadProfiles().associateBy { it.id } }
+    val hasActiveEntry = entries.any { it.finishedAt == null }
 
     LaunchedEffect(session.profileId, session.state, session.statusText) {
         entries = store.loadConnectionHistory()
+        currentTime = System.currentTimeMillis()
+    }
+
+    LaunchedEffect(hasActiveEntry) {
+        while (hasActiveEntry) {
+            currentTime = System.currentTimeMillis()
+            delay(1_000L)
+        }
     }
 
     fun reconnect(profile: HostProfile) {
@@ -152,6 +163,7 @@ fun HistoryScreen() {
                     val profile = profilesById[entry.profileId]
                     HistoryCard(
                         entry = entry,
+                        currentTime = currentTime,
                         neon = neon,
                         primaryText = primaryText,
                         secondaryText = secondaryText,
@@ -234,6 +246,7 @@ private fun EmptyHistory(
 @Composable
 private fun HistoryCard(
     entry: ConnectionHistoryEntry,
+    currentTime: Long,
     neon: Boolean,
     primaryText: Color,
     secondaryText: Color,
@@ -309,7 +322,7 @@ private fun HistoryCard(
             Row {
                 Text(formatTimestamp(entry.startedAt), color = primaryText, style = MaterialTheme.typography.labelMedium)
                 Spacer(Modifier.width(10.dp))
-                Text("• ${formatDuration(entry)}", color = secondaryText, style = MaterialTheme.typography.labelMedium)
+                Text("• ${formatDuration(entry, currentTime)}", color = secondaryText, style = MaterialTheme.typography.labelMedium)
                 Spacer(Modifier.weight(1f))
                 Text(entry.protocol.label, color = resultColor, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
             }
@@ -338,8 +351,8 @@ private fun HistoryCard(
 private fun formatTimestamp(timestamp: Long): String =
     Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(historyDateFormatter)
 
-private fun formatDuration(entry: ConnectionHistoryEntry): String {
-    val end = entry.finishedAt ?: System.currentTimeMillis()
+private fun formatDuration(entry: ConnectionHistoryEntry, currentTime: Long): String {
+    val end = entry.finishedAt ?: currentTime
     val totalSeconds = max(0L, (end - entry.startedAt) / 1_000L)
     val hours = totalSeconds / 3_600L
     val minutes = (totalSeconds % 3_600L) / 60L
