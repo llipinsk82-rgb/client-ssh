@@ -43,6 +43,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import eu.blackserv.clientssh.health.HealthCheckExecutor
+import eu.blackserv.clientssh.health.HealthCheckHistoryRepository
+import eu.blackserv.clientssh.health.HealthCheckRecord
 import eu.blackserv.clientssh.health.HealthCheckRepository
 import eu.blackserv.clientssh.health.HealthCheckSnapshot
 import eu.blackserv.clientssh.health.HealthMonitorConfig
@@ -76,12 +78,27 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
     val snapshotRepository = remember(appContext) {
         HealthCheckRepository(SharedPreferencesHealthCheckStorage(appContext))
     }
+    val historyRepository = remember(appContext) {
+        HealthCheckHistoryRepository(
+            SharedPreferencesHealthCheckStorage(
+                context = appContext,
+                valueKey = SharedPreferencesHealthCheckStorage.HISTORY_VALUE_KEY,
+            ),
+        )
+    }
     val scheduler = remember(appContext) { HealthMonitorScheduler(appContext) }
-    val executor = remember(snapshotRepository) {
-        HealthCheckExecutor(snapshotRepository, TcpHealthProbe())
+    val executor = remember(snapshotRepository, historyRepository) {
+        HealthCheckExecutor(
+            snapshotRepository = snapshotRepository,
+            probe = TcpHealthProbe(),
+            historyRepository = historyRepository,
+        )
     }
     var configs by remember { mutableStateOf(configRepository.getAll().associateBy { it.profileId }) }
     var snapshots by remember { mutableStateOf(snapshotRepository.getAll().associateBy { it.profileId }) }
+    var histories by remember(profiles) {
+        mutableStateOf(profiles.associate { it.id to historyRepository.get(it.id) })
+    }
     var checkingProfileIds by remember { mutableStateOf(emptySet<String>()) }
     var notificationsGranted by remember {
         mutableStateOf(
@@ -97,6 +114,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
     fun refresh() {
         configs = configRepository.getAll().associateBy { it.profileId }
         snapshots = snapshotRepository.getAll().associateBy { it.profileId }
+        histories = profiles.associate { it.id to historyRepository.get(it.id) }
     }
 
     fun save(config: HealthMonitorConfig) {
@@ -180,6 +198,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
                         profile = profile,
                         config = config,
                         snapshot = snapshots[profile.id],
+                        history = histories[profile.id].orEmpty(),
                         checking = profile.id in checkingProfileIds,
                         onSave = ::save,
                         onCheckNow = { checkNow(profile, config) },
@@ -220,6 +239,7 @@ private fun HealthProfileCard(
     profile: HostProfile,
     config: HealthMonitorConfig,
     snapshot: HealthCheckSnapshot?,
+    history: List<HealthCheckRecord>,
     checking: Boolean,
     onSave: (HealthMonitorConfig) -> Unit,
     onCheckNow: () -> Unit,
@@ -288,6 +308,38 @@ private fun HealthProfileCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+
+            if (history.isNotEmpty()) {
+                Text("Ostatnie pomiary", style = MaterialTheme.typography.labelMedium)
+                history.take(3).forEach { record ->
+                    val recordColor = when (record.status) {
+                        HealthStatus.ONLINE -> Color(0xFF3DDC84)
+                        HealthStatus.OFFLINE -> Color(0xFFFF7187)
+                        HealthStatus.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            healthTimestampLabel(record.checkedAt, now),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            record.status.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = recordColor,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        record.responseTimeMs?.let { latency ->
+                            Text(
+                                " • ${latency} ms",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             }
 
             Button(
