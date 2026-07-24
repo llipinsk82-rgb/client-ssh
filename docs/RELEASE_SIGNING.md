@@ -47,17 +47,19 @@ Wartość po `SHA256:` należy zapisać w `CLIENT_SSH_RELEASE_CERT_SHA256`. Prze
 
 Workflow:
 
-1. odtwarza keystore wyłącznie z sekretu,
-2. nadaje mu uprawnienia `600`,
-3. sprawdza alias przez `keytool`,
-4. buduje release APK,
-5. weryfikuje kryptograficzny podpis przez `apksigner`,
-6. odczytuje SHA-256 certyfikatu z podpisanego APK,
-7. porównuje go z `CLIENT_SSH_RELEASE_CERT_SHA256` i przerywa build przy jakiejkolwiek różnicy,
-8. zapisuje `CERTIFICATE_SHA256.txt` oraz `SHA256SUMS.txt` obok APK,
-9. usuwa tymczasowy keystore niezależnie od wyniku joba.
+1. checkoutuje kod bez zachowywania credentiali GitHub w lokalnej konfiguracji repozytorium,
+2. dla taga `vX.Y.Z` wymaga dokładnej zgodności `X.Y.Z` z `versionName`,
+3. odtwarza keystore wyłącznie z sekretu,
+4. nadaje mu uprawnienia `600`,
+5. sprawdza alias przez `keytool`,
+6. buduje release APK,
+7. weryfikuje kryptograficzny podpis przez `apksigner`,
+8. odczytuje SHA-256 certyfikatu z podpisanego APK,
+9. porównuje go z `CLIENT_SSH_RELEASE_CERT_SHA256` i przerywa build przy jakiejkolwiek różnicy,
+10. zapisuje `CERTIFICATE_SHA256.txt` oraz `SHA256SUMS.txt` obok APK,
+11. usuwa tymczasowy keystore niezależnie od wyniku joba.
 
-Samo przejście `apksigner verify` nie wystarcza. APK może być poprawnie podpisany niewłaściwym kluczem, dlatego release musi przejść również kontrolę oczekiwanego fingerprintu.
+Sam fakt przejścia `apksigner verify` nie wystarcza. APK może być poprawnie podpisany niewłaściwym kluczem, dlatego release musi przejść również kontrolę oczekiwanego fingerprintu.
 
 ## Incydent starego klucza
 
