@@ -7,6 +7,7 @@ import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.HostProfile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConnectionHistoryStateMachineTest {
@@ -28,6 +29,26 @@ class ConnectionHistoryStateMachineTest {
         assertEquals(1, transition.changed.size)
         assertEquals("Ponowne łączenie…", transition.changed.single().message)
         assertNull(transition.changed.single().finishedAt)
+    }
+
+    @Test
+    fun beginPrefersCurrentEntryOverPersistedCopy() {
+        val profile = profile("one")
+        val current = entry(profile, startedAt = 100L).copy(message = "Stan z pamięci")
+        val persisted = entry(profile, startedAt = 50L).copy(message = "Starszy stan z dysku")
+
+        val transition = ConnectionHistoryStateMachine.begin(
+            profile = profile,
+            status = "Łączenie trwa…",
+            now = 200L,
+            current = current,
+            persistedOpen = persisted,
+            persistedLatestOpen = persisted,
+        )
+
+        assertEquals(current.id, transition.current?.id)
+        assertEquals(100L, transition.current?.startedAt)
+        assertEquals("Łączenie trwa…", transition.changed.single().message)
     }
 
     @Test
@@ -122,6 +143,18 @@ class ConnectionHistoryStateMachineTest {
     }
 
     @Test
+    fun connectedWithoutOpenEntryDoesNotCreatePhantomHistory() {
+        val transition = ConnectionHistoryStateMachine.connected(
+            status = "Połączono",
+            current = null,
+            persistedLatestOpen = null,
+        )
+
+        assertNull(transition.current)
+        assertTrue(transition.changed.isEmpty())
+    }
+
+    @Test
     fun finishAfterProcessRestartClosesPersistedSession() {
         val profile = profile("one")
         val persistedOpen = entry(profile, startedAt = 100L)
@@ -140,6 +173,20 @@ class ConnectionHistoryStateMachineTest {
         assertEquals(800L, transition.changed.single().finishedAt)
         assertEquals(ConnectionHistoryResult.DISCONNECTED, transition.changed.single().result)
         assertEquals("Rozłączono ręcznie", transition.changed.single().message)
+    }
+
+    @Test
+    fun finishWithoutOpenEntryDoesNotCreatePhantomHistory() {
+        val transition = ConnectionHistoryStateMachine.finish(
+            result = ConnectionHistoryResult.DISCONNECTED,
+            status = "Rozłączono",
+            now = 850L,
+            current = null,
+            persistedLatestOpen = null,
+        )
+
+        assertNull(transition.current)
+        assertTrue(transition.changed.isEmpty())
     }
 
     @Test
