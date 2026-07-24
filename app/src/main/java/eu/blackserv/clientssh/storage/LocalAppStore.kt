@@ -4,6 +4,11 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import eu.blackserv.clientssh.health.HealthCheckRepository
+import eu.blackserv.clientssh.health.HealthMonitorConfigRepository
+import eu.blackserv.clientssh.health.HealthMonitorController
+import eu.blackserv.clientssh.health.HealthMonitorScheduler
+import eu.blackserv.clientssh.health.SharedPreferencesHealthCheckStorage
 import eu.blackserv.clientssh.model.AppSettings
 import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.AuthenticationMethod
@@ -24,6 +29,20 @@ import org.json.JSONObject
 class LocalAppStore(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val healthMonitorController by lazy {
+        HealthMonitorController(
+            configRepository = HealthMonitorConfigRepository(
+                SharedPreferencesHealthCheckStorage(
+                    context = appContext,
+                    valueKey = SharedPreferencesHealthCheckStorage.CONFIG_VALUE_KEY,
+                ),
+            ),
+            snapshotRepository = HealthCheckRepository(
+                SharedPreferencesHealthCheckStorage(appContext),
+            ),
+            scheduler = HealthMonitorScheduler(appContext),
+        )
+    }
 
     fun loadProfiles(): List<HostProfile> =
         loadProfilesFrom(KEY_PROFILES).ifEmpty { loadProfilesFrom(KEY_PROFILES_BACKUP) }
@@ -40,10 +59,17 @@ class LocalAppStore(context: Context) {
     }
 
     fun saveProfiles(profiles: List<HostProfile>) {
+        val previousIds = loadProfiles().mapTo(mutableSetOf()) { it.id }
+        val currentIds = profiles.mapTo(mutableSetOf()) { it.id }
         val array = JSONArray()
         profiles.forEach { profile -> runCatching { array.put(profile.toJson()) } }
         val raw = array.toString()
-        prefs.edit().putString(KEY_PROFILES, raw).putString(KEY_PROFILES_BACKUP, raw).commit()
+        check(prefs.edit().putString(KEY_PROFILES, raw).putString(KEY_PROFILES_BACKUP, raw).commit()) {
+            "Nie udało się zapisać profili"
+        }
+        (previousIds - currentIds).forEach { removedId ->
+            runCatching { healthMonitorController.removeProfile(removedId) }
+        }
     }
 
     fun loadFavorites(): List<FavoriteCommand> {

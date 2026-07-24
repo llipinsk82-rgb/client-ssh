@@ -3,13 +3,37 @@ name: Android build
 on:
   pull_request:
   push:
-    branches: ['**']
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reject committed signing secrets
+        shell: bash
+        run: bash scripts/check-no-release-secrets.sh
+      - name: Validate release tag matches versionName
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          APP_VERSION="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
+          test -n "$TAG_VERSION"
+          test -n "$APP_VERSION"
+          test "$TAG_VERSION" = "$APP_VERSION"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -19,27 +43,114 @@ jobs:
         run: yes | sdkmanager --licenses >/dev/null || true
       - name: Install Android SDK 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-      - name: Restore stable update signing key
-        shell: bash
-        run: |
-          mkdir -p app/signing
-          base64 --decode .github/signing/client-ssh-update.jks.b64 > app/signing/client-ssh-update.jks
-          keytool -list -keystore app/signing/client-ssh-update.jks -storepass android -alias blackserv-update >/dev/null
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
+      - name: Run unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gradle :app:testDebugUnitTest --stacktrace --console=plain > test.log 2>&1; then
+            tail -n 250 test.log
+            exit 1
+          fi
+          tail -n 80 test.log
       - name: Build debug APK
         shell: bash
         run: |
-          if ! gradle :app:assembleDebug --stacktrace --console=plain > build.log 2>&1; then
-            tail -n 250 build.log
+          set -euo pipefail
+          if ! gradle :app:assembleDebug --stacktrace --console=plain > build-debug.log 2>&1; then
+            tail -n 250 build-debug.log
             exit 1
           fi
-          tail -n 50 build.log
+          tail -n 80 build-debug.log
+          sha256sum app/build/outputs/apk/debug/app-debug.apk | tee app/build/outputs/apk/debug/SHA256SUMS.txt
+      - name: Verify debug APK metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          EXPECTED_PACKAGE="eu.blackserv.clientssh"
+          EXPECTED_VERSION_CODE="$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)"
+          EXPECTED_VERSION_NAME="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
+          BADGING="$($AAPT dump badging "$APK" | head -n 1)"
+          ACTUAL_PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+          ACTUAL_VERSION_CODE="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionCode='\([^']*\)'.*/\1/p")"
+          ACTUAL_VERSION_NAME="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionName='\([^']*\)'.*/\1/p")"
+          test "$ACTUAL_PACKAGE" = "$EXPECTED_PACKAGE"
+          test "$ACTUAL_VERSION_CODE" = "$EXPECTED_VERSION_CODE"
+          test "$ACTUAL_VERSION_NAME" = "$EXPECTED_VERSION_NAME"
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: client-ssh-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
+      - name: Check release signing secrets
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+          CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
+          CLIENT_SSH_RELEASE_CERT_SHA256: ${{ secrets.CLIENT_SSH_RELEASE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          test -n "$CLIENT_SSH_RELEASE_KEYSTORE_B64"
+          test -n "$CLIENT_SSH_RELEASE_STORE_PASSWORD"
+          test -n "$CLIENT_SSH_RELEASE_KEY_ALIAS"
+          test -n "$CLIENT_SSH_RELEASE_KEY_PASSWORD"
+          test -n "$CLIENT_SSH_RELEASE_CERT_SHA256"
+      - name: Restore release signing key from secrets
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          mkdir -p app/signing
+          printf '%s' "$CLIENT_SSH_RELEASE_KEYSTORE_B64" | base64 --decode > app/signing/client-ssh-release.jks
+          chmod 600 app/signing/client-ssh-release.jks
+          keytool -list -keystore app/signing/client-ssh-release.jks -storepass "$CLIENT_SSH_RELEASE_STORE_PASSWORD" -alias "$CLIENT_SSH_RELEASE_KEY_ALIAS" >/dev/null
+      - name: Build signed release APK
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+          CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --stacktrace --console=plain
+      - name: Verify release certificate
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_CERT_SHA256: ${{ secrets.CLIENT_SSH_RELEASE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          ACTUAL="$($APKSIGNER verify --verbose --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          EXPECTED="$(printf '%s' "$CLIENT_SSH_RELEASE_CERT_SHA256" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          test "$ACTUAL" = "$EXPECTED"
+          sha256sum "$APK" | tee app/build/outputs/apk/release/SHA256SUMS.txt
+      - name: Upload signed release APK
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-ssh-release
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove signing key
+        if: always()
+        shell: bash
+        run: rm -f app/signing/client-ssh-release.jks
