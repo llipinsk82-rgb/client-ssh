@@ -34,12 +34,21 @@ object HealthCheckStateMachine {
         now: Long,
         offlineFailureThreshold: Int,
     ): HealthCheckTransition {
+        require(profileId.isNotBlank()) { "profileId must not be blank" }
+        require(now >= 0L) { "now must not be negative" }
         require(offlineFailureThreshold > 0) { "offlineFailureThreshold must be greater than zero" }
         require(current == null || current.profileId == profileId) {
             "Current snapshot belongs to another profile"
         }
 
         val previous = current ?: HealthCheckSnapshot(profileId = profileId)
+        if (previous.lastCheckedAt != null && now < previous.lastCheckedAt) {
+            return HealthCheckTransition(
+                snapshot = previous,
+                notifyStatusChange = false,
+            )
+        }
+
         return when (observation) {
             is HealthObservation.Success -> onSuccess(previous, observation, now)
             is HealthObservation.Failure -> onFailure(
@@ -76,7 +85,11 @@ object HealthCheckStateMachine {
         now: Long,
         offlineFailureThreshold: Int,
     ): HealthCheckTransition {
-        val failures = previous.consecutiveFailures + 1
+        val failures = if (previous.consecutiveFailures == Int.MAX_VALUE) {
+            Int.MAX_VALUE
+        } else {
+            previous.consecutiveFailures + 1
+        }
         val confirmedOffline = failures >= offlineFailureThreshold
         val nextStatus = if (confirmedOffline) HealthStatus.OFFLINE else previous.status
         val next = previous.copy(
