@@ -38,14 +38,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import eu.blackserv.clientssh.health.HealthCheckDiagnosticsRepository
 import eu.blackserv.clientssh.health.HealthCheckExecutor
 import eu.blackserv.clientssh.health.HealthCheckHistoryRepository
 import eu.blackserv.clientssh.health.HealthCheckRecord
 import eu.blackserv.clientssh.health.HealthCheckRepository
+import eu.blackserv.clientssh.health.HealthCheckRunDiagnostic
+import eu.blackserv.clientssh.health.HealthCheckRunOutcome
 import eu.blackserv.clientssh.health.HealthCheckSnapshot
 import eu.blackserv.clientssh.health.HealthMonitorConfig
 import eu.blackserv.clientssh.health.HealthMonitorConfigRepository
@@ -86,6 +91,14 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
             ),
         )
     }
+    val diagnosticsRepository = remember(appContext) {
+        HealthCheckDiagnosticsRepository(
+            SharedPreferencesHealthCheckStorage(
+                context = appContext,
+                valueKey = SharedPreferencesHealthCheckStorage.DIAGNOSTICS_VALUE_KEY,
+            ),
+        )
+    }
     val scheduler = remember(appContext) { HealthMonitorScheduler(appContext) }
     val executor = remember(snapshotRepository, historyRepository) {
         HealthCheckExecutor(
@@ -98,6 +111,9 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
     var snapshots by remember { mutableStateOf(snapshotRepository.getAll().associateBy { it.profileId }) }
     var histories by remember(profiles) {
         mutableStateOf(profiles.associate { it.id to historyRepository.get(it.id) })
+    }
+    var diagnostics by remember(profiles) {
+        mutableStateOf(diagnosticsRepository.getAll().associateBy { it.profileId })
     }
     var checkingProfileIds by remember { mutableStateOf(emptySet<String>()) }
     var notificationsGranted by remember {
@@ -115,6 +131,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
         configs = configRepository.getAll().associateBy { it.profileId }
         snapshots = snapshotRepository.getAll().associateBy { it.profileId }
         histories = profiles.associate { it.id to historyRepository.get(it.id) }
+        diagnostics = diagnosticsRepository.getAll().associateBy { it.profileId }
     }
 
     fun save(config: HealthMonitorConfig) {
@@ -199,6 +216,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
                         config = config,
                         snapshot = snapshots[profile.id],
                         history = histories[profile.id].orEmpty(),
+                        diagnostic = diagnostics[profile.id],
                         checking = profile.id in checkingProfileIds,
                         onSave = ::save,
                         onCheckNow = { checkNow(profile, config) },
@@ -240,10 +258,12 @@ private fun HealthProfileCard(
     config: HealthMonitorConfig,
     snapshot: HealthCheckSnapshot?,
     history: List<HealthCheckRecord>,
+    diagnostic: HealthCheckRunDiagnostic?,
     checking: Boolean,
     onSave: (HealthMonitorConfig) -> Unit,
     onCheckNow: () -> Unit,
 ) {
+    val clipboard = LocalClipboardManager.current
     val statusColor = when (snapshot?.status ?: HealthStatus.UNKNOWN) {
         HealthStatus.ONLINE -> Color(0xFF3DDC84)
         HealthStatus.OFFLINE -> Color(0xFFFF7187)
@@ -310,6 +330,26 @@ private fun HealthProfileCard(
                 )
             }
 
+            BackgroundRunCard(
+                enabled = config.enabled,
+                diagnostic = diagnostic,
+                now = now,
+                onCopyReport = {
+                    clipboard.setText(
+                        AnnotatedString(
+                            healthBackgroundReport(
+                                profileId = profile.id,
+                                enabled = config.enabled,
+                                diagnostic = diagnostic,
+                                snapshot = snapshot,
+                                historySize = history.size,
+                                now = now,
+                            ),
+                        ),
+                    )
+                },
+            )
+
             if (history.isNotEmpty()) {
                 Text("Ostatnie pomiary", style = MaterialTheme.typography.labelMedium)
                 history.take(3).forEach { record ->
@@ -373,6 +413,92 @@ private fun HealthProfileCard(
             }
         }
     }
+}
+
+@Composable
+private fun BackgroundRunCard(
+    enabled: Boolean,
+    diagnostic: HealthCheckRunDiagnostic?,
+    now: Long,
+    onCopyReport: () -> Unit,
+) {
+    val label = when {
+        !enabled -> "WYŁĄCZONY"
+        diagnostic == null -> "OCZEKUJE"
+        else -> diagnostic.outcome.name
+    }
+    val labelColor = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+        diagnostic?.outcome == HealthCheckRunOutcome.SUCCESS -> Color(0xFF3DDC84)
+        diagnostic?.outcome == HealthCheckRunOutcome.RETRY -> Color(0xFFFF7187)
+        diagnostic?.outcome == HealthCheckRunOutcome.RUNNING -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text("Worker w tle", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                Text(label, color = labelColor, fontWeight = FontWeight.Bold)
+            }
+            when {
+                !enabled -> Text("Okresowy pomiar jest wyłączony.", style = MaterialTheme.typography.bodySmall)
+                diagnostic == null -> Text(
+                    "Zadanie jest zaplanowane; Android wybierze dokładny czas wykonania.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                else -> {
+                    Text(
+                        "Start: ${healthTimestampLabel(diagnostic.startedAt, now)}",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    diagnostic.finishedAt?.let {
+                        Text(
+                            "Koniec: ${healthTimestampLabel(it, now)}",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    if (diagnostic.detail.isNotBlank()) {
+                        Text(diagnostic.detail, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            OutlinedButton(onClick = onCopyReport, modifier = Modifier.fillMaxWidth()) {
+                Text("Kopiuj raport testowy")
+            }
+        }
+    }
+}
+
+internal fun healthBackgroundReport(
+    profileId: String,
+    enabled: Boolean,
+    diagnostic: HealthCheckRunDiagnostic?,
+    snapshot: HealthCheckSnapshot?,
+    historySize: Int,
+    now: Long = System.currentTimeMillis(),
+): String = buildString {
+    appendLine("Client SSH 0.3.5 — Health Monitor")
+    appendLine("profile=${profileId.hashCode().toUInt().toString(16)}")
+    appendLine("enabled=$enabled")
+    appendLine("worker=${diagnostic?.outcome?.name ?: "NO_RUN"}")
+    diagnostic?.let {
+        appendLine("worker_started=${healthTimestampLabel(it.startedAt, now)}")
+        appendLine("worker_finished=${it.finishedAt?.let { time -> healthTimestampLabel(time, now) } ?: "-"}")
+        appendLine("worker_detail=${it.detail.ifBlank { "-" }}")
+    }
+    appendLine("status=${snapshot?.status?.name ?: HealthStatus.UNKNOWN.name}")
+    appendLine("last_check=${snapshot?.lastCheckedAt?.let { healthTimestampLabel(it, now) } ?: "-"}")
+    appendLine("last_success=${snapshot?.lastSuccessAt?.let { healthTimestampLabel(it, now) } ?: "-"}")
+    appendLine("failures=${snapshot?.consecutiveFailures ?: 0}")
+    append("history_records=$historySize")
 }
 
 internal fun healthTimestampLabel(timestamp: Long, now: Long = System.currentTimeMillis()): String {
