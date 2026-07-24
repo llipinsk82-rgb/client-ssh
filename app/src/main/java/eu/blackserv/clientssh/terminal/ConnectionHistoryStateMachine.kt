@@ -16,6 +16,7 @@ object ConnectionHistoryStateMachine {
         now: Long,
         current: ConnectionHistoryEntry?,
         persistedOpen: ConnectionHistoryEntry?,
+        persistedLatestOpen: ConnectionHistoryEntry?,
     ): HistoryTransition {
         val sameProfile = current
             ?.takeIf { it.profileId == profile.id && it.finishedAt == null }
@@ -27,7 +28,11 @@ object ConnectionHistoryStateMachine {
         }
 
         val changed = mutableListOf<ConnectionHistoryEntry>()
-        current?.takeIf { it.finishedAt == null && it.profileId != profile.id }?.let { previous ->
+        val previousOpen = current
+            ?.takeIf { it.finishedAt == null && it.profileId != profile.id }
+            ?: persistedLatestOpen?.takeIf { it.finishedAt == null && it.profileId != profile.id }
+
+        previousOpen?.let { previous ->
             changed += previous.copy(
                 finishedAt = now,
                 result = ConnectionHistoryResult.DISCONNECTED,
@@ -56,7 +61,15 @@ object ConnectionHistoryStateMachine {
         now: Long,
         current: ConnectionHistoryEntry?,
         persistedOpen: ConnectionHistoryEntry?,
-    ): HistoryTransition = begin(profile, status, now, current, persistedOpen)
+        persistedLatestOpen: ConnectionHistoryEntry?,
+    ): HistoryTransition = begin(
+        profile = profile,
+        status = status,
+        now = now,
+        current = current,
+        persistedOpen = persistedOpen,
+        persistedLatestOpen = persistedLatestOpen,
+    )
 
     fun connected(
         status: String,
