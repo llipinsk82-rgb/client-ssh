@@ -9,15 +9,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
-      CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
-      CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
-      CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
-      CLIENT_SSH_RELEASE_CERT_SHA256: ${{ secrets.CLIENT_SSH_RELEASE_CERT_SHA256 }}
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - name: Reject committed signing secrets
@@ -65,6 +64,12 @@ jobs:
       - name: Check release signing secrets
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         shell: bash
+        env:
+          CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+          CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
+          CLIENT_SSH_RELEASE_CERT_SHA256: ${{ secrets.CLIENT_SSH_RELEASE_CERT_SHA256 }}
         run: |
           test -n "$CLIENT_SSH_RELEASE_KEYSTORE_B64"
           test -n "$CLIENT_SSH_RELEASE_STORE_PASSWORD"
@@ -74,6 +79,10 @@ jobs:
       - name: Restore release signing key from secrets
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         shell: bash
+        env:
+          CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
         run: |
           mkdir -p app/signing
           printf '%s' "$CLIENT_SSH_RELEASE_KEYSTORE_B64" | base64 --decode > app/signing/client-ssh-release.jks
@@ -85,6 +94,10 @@ jobs:
       - name: Build signed release APK
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         shell: bash
+        env:
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+          CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
         run: |
           if ! gradle :app:assembleRelease --stacktrace --console=plain > build-release.log 2>&1; then
             tail -n 250 build-release.log
@@ -94,6 +107,8 @@ jobs:
       - name: Verify release certificate and checksum
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         shell: bash
+        env:
+          CLIENT_SSH_RELEASE_CERT_SHA256: ${{ secrets.CLIENT_SSH_RELEASE_CERT_SHA256 }}
         run: |
           set -euo pipefail
           RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
