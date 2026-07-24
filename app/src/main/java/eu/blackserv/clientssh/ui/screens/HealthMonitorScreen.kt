@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,25 +28,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import eu.blackserv.clientssh.health.HealthCheckExecutor
 import eu.blackserv.clientssh.health.HealthCheckRepository
 import eu.blackserv.clientssh.health.HealthCheckSnapshot
 import eu.blackserv.clientssh.health.HealthMonitorConfig
 import eu.blackserv.clientssh.health.HealthMonitorConfigRepository
 import eu.blackserv.clientssh.health.HealthMonitorScheduler
 import eu.blackserv.clientssh.health.HealthStatus
+import eu.blackserv.clientssh.health.HealthTarget
 import eu.blackserv.clientssh.health.SharedPreferencesHealthCheckStorage
+import eu.blackserv.clientssh.health.TcpHealthProbe
 import eu.blackserv.clientssh.model.HostProfile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HealthMonitorScreen(profiles: List<HostProfile>) {
     val context = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
     val configRepository = remember(context) {
         HealthMonitorConfigRepository(
             SharedPreferencesHealthCheckStorage(
@@ -58,14 +67,45 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
         HealthCheckRepository(SharedPreferencesHealthCheckStorage(context))
     }
     val scheduler = remember(context) { HealthMonitorScheduler(context) }
+    val executor = remember(snapshotRepository) {
+        HealthCheckExecutor(snapshotRepository, TcpHealthProbe())
+    }
     var configs by remember { mutableStateOf(configRepository.getAll().associateBy { it.profileId }) }
     var snapshots by remember { mutableStateOf(snapshotRepository.getAll().associateBy { it.profileId }) }
+    var checkingProfileIds by remember { mutableStateOf(emptySet<String>()) }
+
+    fun refresh() {
+        configs = configRepository.getAll().associateBy { it.profileId }
+        snapshots = snapshotRepository.getAll().associateBy { it.profileId }
+    }
 
     fun save(config: HealthMonitorConfig) {
         configRepository.upsert(config)
         scheduler.schedule(config)
-        configs = configRepository.getAll().associateBy { it.profileId }
-        snapshots = snapshotRepository.getAll().associateBy { it.profileId }
+        refresh()
+    }
+
+    fun checkNow(profile: HostProfile, config: HealthMonitorConfig) {
+        if (profile.id in checkingProfileIds) return
+        checkingProfileIds = checkingProfileIds + profile.id
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    executor.execute(
+                        profileId = profile.id,
+                        target = HealthTarget(
+                            host = profile.host,
+                            port = profile.port,
+                            timeoutMs = config.timeoutMs,
+                        ),
+                        offlineFailureThreshold = config.offlineFailureThreshold,
+                    )
+                }
+                refresh()
+            } finally {
+                checkingProfileIds = checkingProfileIds - profile.id
+            }
+        }
     }
 
     Scaffold(
@@ -106,11 +146,14 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(profiles, key = { it.id }) { profile ->
+                    val config = configs[profile.id] ?: HealthMonitorConfig(profileId = profile.id)
                     HealthProfileCard(
                         profile = profile,
-                        config = configs[profile.id] ?: HealthMonitorConfig(profileId = profile.id),
+                        config = config,
                         snapshot = snapshots[profile.id],
+                        checking = profile.id in checkingProfileIds,
                         onSave = ::save,
+                        onCheckNow = { checkNow(profile, config) },
                     )
                 }
             }
@@ -123,7 +166,9 @@ private fun HealthProfileCard(
     profile: HostProfile,
     config: HealthMonitorConfig,
     snapshot: HealthCheckSnapshot?,
+    checking: Boolean,
     onSave: (HealthMonitorConfig) -> Unit,
+    onCheckNow: () -> Unit,
 ) {
     val statusColor = when (snapshot?.status ?: HealthStatus.UNKNOWN) {
         HealthStatus.ONLINE -> Color(0xFF3DDC84)
@@ -174,6 +219,14 @@ private fun HealthProfileCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
+
+            Button(
+                onClick = onCheckNow,
+                enabled = !checking,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (checking) "Sprawdzanie…" else "Sprawdź teraz")
+            }
 
             Text("Interwał", style = MaterialTheme.typography.labelMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
