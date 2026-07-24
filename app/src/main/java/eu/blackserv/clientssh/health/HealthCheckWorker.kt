@@ -12,6 +12,25 @@ class HealthCheckWorker(
     override suspend fun doWork(): Result {
         val profileId = inputData.getString(KEY_PROFILE_ID)?.takeIf { it.isNotBlank() }
             ?: return Result.failure()
+        val diagnostics = HealthCheckDiagnosticsRepository(
+            SharedPreferencesHealthCheckStorage(
+                context = applicationContext,
+                valueKey = SharedPreferencesHealthCheckStorage.DIAGNOSTICS_VALUE_KEY,
+            ),
+        )
+        val startedAt = System.currentTimeMillis()
+        diagnostics.markStarted(profileId, startedAt)
+
+        fun finish(outcome: HealthCheckRunOutcome, detail: String, result: Result): Result {
+            diagnostics.markFinished(
+                profileId = profileId,
+                startedAt = startedAt,
+                finishedAt = System.currentTimeMillis(),
+                outcome = outcome,
+                detail = detail,
+            )
+            return result
+        }
 
         return runCatching {
             val configStorage = SharedPreferencesHealthCheckStorage(
@@ -19,13 +38,15 @@ class HealthCheckWorker(
                 valueKey = SharedPreferencesHealthCheckStorage.CONFIG_VALUE_KEY,
             )
             val config = HealthMonitorConfigRepository(configStorage).get(profileId)
-                ?: return Result.success()
-            if (!config.enabled) return Result.success()
+                ?: return finish(HealthCheckRunOutcome.SKIPPED, "Brak konfiguracji", Result.success())
+            if (!config.enabled) {
+                return finish(HealthCheckRunOutcome.SKIPPED, "Monitoring wyłączony", Result.success())
+            }
 
             val profile = LocalAppStore(applicationContext)
                 .loadProfiles()
                 .firstOrNull { it.id == profileId }
-                ?: return Result.success()
+                ?: return finish(HealthCheckRunOutcome.SKIPPED, "Profil nie istnieje", Result.success())
 
             val snapshotRepository = HealthCheckRepository(
                 SharedPreferencesHealthCheckStorage(applicationContext),
@@ -58,9 +79,17 @@ class HealthCheckWorker(
                 )
             }
 
-            Result.success()
-        }.getOrElse {
-            Result.retry()
+            finish(
+                outcome = HealthCheckRunOutcome.SUCCESS,
+                detail = transition.snapshot.status.name,
+                result = Result.success(),
+            )
+        }.getOrElse { error ->
+            finish(
+                outcome = HealthCheckRunOutcome.RETRY,
+                detail = error.message.orEmpty().ifBlank { error::class.simpleName.orEmpty() },
+                result = Result.retry(),
+            )
         }
     }
 
