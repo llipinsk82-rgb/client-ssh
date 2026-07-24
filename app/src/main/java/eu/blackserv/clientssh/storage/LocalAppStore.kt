@@ -73,7 +73,44 @@ class LocalAppStore(context: Context) {
         prefs.edit().putString(KEY_FAVORITES, array.toString()).commit()
     }
 
-    fun loadConnectionHistory(): List<ConnectionHistoryEntry> {
+    fun loadConnectionHistory(): List<ConnectionHistoryEntry> = synchronized(HISTORY_LOCK) {
+        loadConnectionHistoryUnlocked()
+    }
+
+    fun saveConnectionHistory(entries: List<ConnectionHistoryEntry>) = synchronized(HISTORY_LOCK) {
+        saveConnectionHistoryUnlocked(entries)
+    }
+
+    fun upsertConnectionHistory(entry: ConnectionHistoryEntry): List<ConnectionHistoryEntry> =
+        mutateConnectionHistory { history ->
+            val index = history.indexOfFirst { it.id == entry.id }
+            if (index >= 0) history[index] = entry else history.add(0, entry)
+        }
+
+    fun removeConnectionHistoryEntry(entryId: String): List<ConnectionHistoryEntry> =
+        mutateConnectionHistory { history ->
+            history.removeAll { it.id == entryId && it.finishedAt != null }
+        }
+
+    fun clearFinishedConnectionHistory(): List<ConnectionHistoryEntry> =
+        mutateConnectionHistory { history ->
+            history.removeAll { it.finishedAt != null }
+        }
+
+    fun clearConnectionHistory() = synchronized(HISTORY_LOCK) {
+        prefs.edit().remove(KEY_CONNECTION_HISTORY).commit()
+    }
+
+    private inline fun mutateConnectionHistory(
+        mutation: (MutableList<ConnectionHistoryEntry>) -> Unit,
+    ): List<ConnectionHistoryEntry> = synchronized(HISTORY_LOCK) {
+        val history = loadConnectionHistoryUnlocked().toMutableList()
+        mutation(history)
+        saveConnectionHistoryUnlocked(history)
+        loadConnectionHistoryUnlocked()
+    }
+
+    private fun loadConnectionHistoryUnlocked(): List<ConnectionHistoryEntry> {
         val raw = prefs.getString(KEY_CONNECTION_HISTORY, "[]").orEmpty()
         val array = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
         return buildList {
@@ -84,17 +121,13 @@ class LocalAppStore(context: Context) {
         }.sortedByDescending { it.startedAt }
     }
 
-    fun saveConnectionHistory(entries: List<ConnectionHistoryEntry>) {
+    private fun saveConnectionHistoryUnlocked(entries: List<ConnectionHistoryEntry>) {
         val array = JSONArray()
         deduplicateHistory(entries)
             .sortedByDescending { it.startedAt }
             .take(MAX_HISTORY_ENTRIES)
             .forEach { entry -> array.put(entry.toJson()) }
         prefs.edit().putString(KEY_CONNECTION_HISTORY, array.toString()).commit()
-    }
-
-    fun clearConnectionHistory() {
-        prefs.edit().remove(KEY_CONNECTION_HISTORY).commit()
     }
 
     fun loadAppSettings(): AppSettings = AppSettings(
@@ -276,6 +309,7 @@ class LocalAppStore(context: Context) {
         runCatching { enumValueOf<T>(raw) }.getOrDefault(default)
 
     companion object {
+        private val HISTORY_LOCK = Any()
         private const val PREFS_NAME = "client_ssh_store"
         private const val KEY_PROFILES = "profiles"
         private const val KEY_PROFILES_BACKUP = "profiles_backup"
