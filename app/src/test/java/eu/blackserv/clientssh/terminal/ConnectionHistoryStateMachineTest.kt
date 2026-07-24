@@ -21,6 +21,7 @@ class ConnectionHistoryStateMachineTest {
             now = 200L,
             current = null,
             persistedOpen = open,
+            persistedLatestOpen = open,
         )
 
         assertEquals(open.id, transition.current?.id)
@@ -41,11 +42,36 @@ class ConnectionHistoryStateMachineTest {
             now = 300L,
             current = open,
             persistedOpen = null,
+            persistedLatestOpen = open,
         )
 
         assertEquals(2, transition.changed.size)
         assertEquals(ConnectionHistoryResult.DISCONNECTED, transition.changed[0].result)
         assertEquals(300L, transition.changed[0].finishedAt)
+        assertEquals(second.id, transition.current?.profileId)
+        assertNull(transition.current?.finishedAt)
+    }
+
+    @Test
+    fun beginAfterProcessRestartClosesPersistedOtherProfile() {
+        val first = profile("one")
+        val second = profile("two")
+        val persistedOpen = entry(first, startedAt = 100L)
+
+        val transition = ConnectionHistoryStateMachine.begin(
+            profile = second,
+            status = "Łączenie…",
+            now = 450L,
+            current = null,
+            persistedOpen = null,
+            persistedLatestOpen = persistedOpen,
+        )
+
+        assertEquals(2, transition.changed.size)
+        assertEquals(first.id, transition.changed[0].profileId)
+        assertEquals(450L, transition.changed[0].finishedAt)
+        assertEquals(ConnectionHistoryResult.DISCONNECTED, transition.changed[0].result)
+        assertEquals("Uruchomiono inną sesję.", transition.changed[0].message)
         assertEquals(second.id, transition.current?.profileId)
         assertNull(transition.current?.finishedAt)
     }
@@ -61,6 +87,7 @@ class ConnectionHistoryStateMachineTest {
             now = 500L,
             current = open,
             persistedOpen = null,
+            persistedLatestOpen = open,
         )
 
         assertEquals(open.id, transition.current?.id)
