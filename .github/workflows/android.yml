@@ -3,11 +3,20 @@ name: Android build
 on:
   pull_request:
   push:
-    branches: ['**']
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
+      CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+      CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+      CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -19,12 +28,6 @@ jobs:
         run: yes | sdkmanager --licenses >/dev/null || true
       - name: Install Android SDK 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-      - name: Restore stable update signing key
-        shell: bash
-        run: |
-          mkdir -p app/signing
-          base64 --decode .github/signing/client-ssh-update.jks.b64 > app/signing/client-ssh-update.jks
-          keytool -list -keystore app/signing/client-ssh-update.jks -storepass android -alias blackserv-update >/dev/null
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
@@ -36,38 +39,74 @@ jobs:
             exit 1
           fi
           tail -n 80 test.log
-      - name: Build debug and signed release APKs
+      - name: Build debug APK
         shell: bash
         run: |
-          if ! gradle :app:assembleDebug :app:assembleRelease --stacktrace --console=plain > build.log 2>&1; then
-            tail -n 250 build.log
+          if ! gradle :app:assembleDebug --stacktrace --console=plain > build-debug.log 2>&1; then
+            tail -n 250 build-debug.log
             exit 1
           fi
-          tail -n 80 build.log
-      - name: Verify release signature and checksums
+          tail -n 80 build-debug.log
+          sha256sum app/build/outputs/apk/debug/app-debug.apk | tee app/build/outputs/apk/debug/SHA256SUMS.txt
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-ssh-debug
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Check release signing secrets
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        shell: bash
+        run: |
+          test -n "$CLIENT_SSH_RELEASE_KEYSTORE_B64"
+          test -n "$CLIENT_SSH_RELEASE_STORE_PASSWORD"
+          test -n "$CLIENT_SSH_RELEASE_KEY_ALIAS"
+          test -n "$CLIENT_SSH_RELEASE_KEY_PASSWORD"
+      - name: Restore release signing key from secrets
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        shell: bash
+        run: |
+          mkdir -p app/signing
+          printf '%s' "$CLIENT_SSH_RELEASE_KEYSTORE_B64" | base64 --decode > app/signing/client-ssh-release.jks
+          chmod 600 app/signing/client-ssh-release.jks
+          keytool -list \
+            -keystore app/signing/client-ssh-release.jks \
+            -storepass "$CLIENT_SSH_RELEASE_STORE_PASSWORD" \
+            -alias "$CLIENT_SSH_RELEASE_KEY_ALIAS" >/dev/null
+      - name: Build signed release APK
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        shell: bash
+        run: |
+          if ! gradle :app:assembleRelease --stacktrace --console=plain > build-release.log 2>&1; then
+            tail -n 250 build-release.log
+            exit 1
+          fi
+          tail -n 80 build-release.log
+      - name: Verify release signature and checksum
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         shell: bash
         run: |
           RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
-          DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           test -s "$RELEASE_APK"
-          test -s "$DEBUG_APK"
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$RELEASE_APK"
-          sha256sum "$RELEASE_APK" "$DEBUG_APK" | tee app/build/outputs/apk/SHA256SUMS.txt
+          sha256sum "$RELEASE_APK" | tee app/build/outputs/apk/release/SHA256SUMS.txt
       - name: Upload signed release APK
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: actions/upload-artifact@v4
         with:
           name: client-ssh-release
           path: |
             app/build/outputs/apk/release/app-release.apk
-            app/build/outputs/apk/SHA256SUMS.txt
+            app/build/outputs/apk/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: client-ssh-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
+      - name: Remove signing key
+        if: always()
+        shell: bash
+        run: rm -f app/signing/client-ssh-release.jks
