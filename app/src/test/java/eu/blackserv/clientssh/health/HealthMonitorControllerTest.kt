@@ -37,19 +37,43 @@ class HealthMonitorControllerTest {
         fixture.snapshotRepository.upsert(
             HealthCheckSnapshot(profileId = "a", status = HealthStatus.OFFLINE),
         )
+        fixture.historyRepository.append(
+            HealthCheckRecord(
+                profileId = "a",
+                checkedAt = 1_000L,
+                status = HealthStatus.OFFLINE,
+                message = "timeout",
+            ),
+        )
+        fixture.historyRepository.append(
+            HealthCheckRecord(
+                profileId = "b",
+                checkedAt = 2_000L,
+                status = HealthStatus.ONLINE,
+                responseTimeMs = 12L,
+            ),
+        )
 
         fixture.controller.removeProfile("a")
 
         assertEquals("a", fixture.scheduler.cancelled.last())
         assertNull(fixture.configRepository.get("a"))
         assertNull(fixture.snapshotRepository.get("a"))
+        assertTrue(fixture.historyRepository.get("a").isEmpty())
+        assertEquals(1, fixture.historyRepository.get("b").size)
     }
 
     private class Fixture {
         val scheduler = RecordingScheduler()
         val configRepository = HealthMonitorConfigRepository(MemoryStorage())
         val snapshotRepository = HealthCheckRepository(MemoryStorage())
-        val controller = HealthMonitorController(configRepository, snapshotRepository, scheduler)
+        val historyRepository = HealthCheckHistoryRepository(MemoryStorage())
+        val controller = HealthMonitorController(
+            configRepository = configRepository,
+            snapshotRepository = snapshotRepository,
+            scheduler = scheduler,
+            historyRepository = historyRepository,
+        )
     }
 
     private class RecordingScheduler : HealthWorkScheduler {
