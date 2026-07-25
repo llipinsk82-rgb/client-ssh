@@ -17,6 +17,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      RELEASE_SIGNING_ENABLED: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'pull_request' && github.event.pull_request.number == 21 && github.event.pull_request.head.repo.full_name == github.repository && github.actor == 'llipinsk82-rgb') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -133,7 +135,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Check release signing secrets
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        if: env.RELEASE_SIGNING_ENABLED == 'true'
         shell: bash
         env:
           CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
@@ -149,7 +151,7 @@ jobs:
           test -n "$CLIENT_SSH_RELEASE_KEY_PASSWORD"
           test -n "$CLIENT_SSH_RELEASE_CERT_SHA256"
       - name: Restore release signing key from secrets
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        if: env.RELEASE_SIGNING_ENABLED == 'true'
         shell: bash
         env:
           CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
@@ -168,7 +170,7 @@ jobs:
             -storepass:file "$STOREPASS_FILE" \
             -alias "$CLIENT_SSH_RELEASE_KEY_ALIAS" >/dev/null
       - name: Build signed release APK
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        if: env.RELEASE_SIGNING_ENABLED == 'true'
         shell: bash
         env:
           CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
@@ -176,7 +178,7 @@ jobs:
           CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
         run: gradle :app:assembleRelease --stacktrace --console=plain
       - name: Verify release certificate
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        if: env.RELEASE_SIGNING_ENABLED == 'true'
         shell: bash
         env:
           CLIENT_SSH_RELEASE_CERT_SHA256: ${{ secrets.CLIENT_SSH_RELEASE_CERT_SHA256 }}
@@ -189,10 +191,10 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
           sha256sum "$APK" | tee app/build/outputs/apk/release/SHA256SUMS.txt
       - name: Upload signed release APK
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        if: env.RELEASE_SIGNING_ENABLED == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: client-ssh-release
+          name: ${{ github.event_name == 'pull_request' && 'client-ssh-release-verification' || 'client-ssh-release' }}
           path: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/apk/release/SHA256SUMS.txt
