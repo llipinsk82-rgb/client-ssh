@@ -9,6 +9,38 @@ Celem testu jest potwierdzenie, że pomiary TCP wykonują się ręcznie i przez 
 - Dla szybszego testu awarii przydatny jest drugi profil z zamkniętym lub nieosiągalnym portem.
 - System nie może mieć wymuszonego zatrzymania aplikacji (`Force stop`). Android nie uruchamia WorkManagera dla aplikacji pozostającej w stanie force-stop.
 
+## Bezpieczna instalacja i identyfikacja builda
+
+1. Pobierz artefakt `client-ssh-debug` wyłącznie z ostatniego zielonego pipeline'u PR #21.
+2. Zanotuj numer pipeline'u oraz pełny SHA commita, z którego powstał artefakt.
+3. Oblicz sumę APK przed instalacją:
+
+```bash
+sha256sum app-debug.apk
+```
+
+4. Sprawdź metadane APK, jeśli Android SDK jest dostępne:
+
+```bash
+aapt dump badging app-debug.apk | grep -E "package:|versionCode|versionName"
+```
+
+Oczekiwane wartości: package `eu.blackserv.clientssh`, `versionCode=38`, `versionName=0.3.5`.
+
+5. Instaluj aktualizacyjnie, bez kasowania danych aplikacji:
+
+```bash
+adb install -r app-debug.apk
+```
+
+6. Po instalacji potwierdź wersję na urządzeniu:
+
+```bash
+adb shell dumpsys package eu.blackserv.clientssh | grep -E "versionCode|versionName"
+```
+
+Jeżeli Android zgłosi konflikt podpisu, **nie odinstalowuj istniejącej aplikacji na urządzeniu z ważnymi profilami lub historią**. Debug APK jest podpisany standardowym kluczem debug i może być niezgodny z wcześniej zainstalowanym buildem release. Użyj urządzenia testowego, osobnego profilu Android albo najpierw wykonaj bezpieczny eksport danych, jeśli aplikacja go obsługuje.
+
 ## 1. Pomiar ręczny w aplikacji
 
 1. Otwórz zakładkę **Monitor**.
@@ -35,6 +67,14 @@ Celem testu jest potwierdzenie, że pomiary TCP wykonują się ręcznie i przez 
 - Dla poprawnego, istniejącego i włączonego profilu oczekiwany wynik to `SUCCESS`.
 - Raport zawiera hashowany `profile`, wynik workera, czasy i stan pomiaru.
 - Raport nie zawiera hosta, loginu, hasła, klucza prywatnego ani pełnego identyfikatora profilu.
+
+Raport można zweryfikować automatycznie z katalogu repozytorium:
+
+```bash
+printf '%s\n' "$REPORT" | scripts/verify-health-monitor-report.sh
+```
+
+Walidator powinien zwrócić `PASS` dla raportu z `worker=SUCCESS`, rozstrzygniętym statusem i co najmniej jednym rekordem historii. Raport z `RETRY`, `FAILED`, nierozstrzygniętym statusem albo potencjalnie wrażliwymi polami powinien zostać odrzucony.
 
 ## 3. Naturalne wykonanie okresowe po zamknięciu aplikacji
 
@@ -108,6 +148,8 @@ Na Androidzie 13 lub nowszym odmów zgody `POST_NOTIFICATIONS`.
 
 Do komentarza w issue #20 wystarczy wkleić:
 
+- pełny SHA testowanego commita i numer pipeline'u,
+- SHA-256 zainstalowanego APK,
 - model telefonu i wersję Androida,
 - wynik sekcji 1–6: PASS/FAIL,
 - skopiowany raport diagnostyczny,
