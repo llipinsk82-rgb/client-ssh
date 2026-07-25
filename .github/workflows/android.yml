@@ -24,6 +24,41 @@ jobs:
       - name: Reject committed signing secrets
         shell: bash
         run: bash scripts/check-no-release-secrets.sh
+      - name: Test Health Monitor report validator
+        shell: bash
+        run: |
+          set -euo pipefail
+          TMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TMP_DIR"' EXIT
+
+          cat > "$TMP_DIR/pass.txt" <<'REPORT'
+          Client SSH 0.3.5 — Health Monitor
+          profile=1a2b3c4d
+          enabled=true
+          worker=SUCCESS
+          worker_started=przed chwilą
+          worker_finished=przed chwilą
+          worker_detail=Pomiar zakończony
+          status=ONLINE
+          last_check=przed chwilą
+          last_success=przed chwilą
+          failures=0
+          history_records=1
+          REPORT
+          bash scripts/verify-health-monitor-report.sh "$TMP_DIR/pass.txt"
+
+          sed 's/^worker=SUCCESS$/worker=RETRY/' "$TMP_DIR/pass.txt" > "$TMP_DIR/retry.txt"
+          if bash scripts/verify-health-monitor-report.sh "$TMP_DIR/retry.txt"; then
+            echo "Validator accepted worker=RETRY" >&2
+            exit 1
+          fi
+
+          cp "$TMP_DIR/pass.txt" "$TMP_DIR/secret.txt"
+          echo 'password=should-never-appear' >> "$TMP_DIR/secret.txt"
+          if bash scripts/verify-health-monitor-report.sh "$TMP_DIR/secret.txt"; then
+            echo "Validator accepted a sensitive field" >&2
+            exit 1
+          fi
       - name: Validate release tag matches versionName
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
