@@ -74,7 +74,7 @@ echo
 
 keytool -genkeypair \
   -keystore "$keystore" \
-  -storetype PKCS12 \
+  -storetype JKS \
   -storepass "$store_password" \
   -alias "$alias_name" \
   -keypass "$key_password" \
@@ -82,7 +82,7 @@ keytool -genkeypair \
   -keysize 4096 \
   -sigalg SHA256withRSA \
   -validity 10000 \
-  -dname "CN=Client SSH, OU=BlackServ, O=BlackServ, C=GB" \
+  -dname "CN=Client SSH, OU=BlackServ, O=BlackServ, C=PL" \
   -noprompt
 
 fingerprint="$(
