@@ -2,15 +2,22 @@
 set -euo pipefail
 
 usage() {
-  echo "Użycie: $0 RAPORT.txt" >&2
+  echo "Użycie: $0 [RAPORT.txt|-]" >&2
+  echo "Bez argumentu lub z '-' raport jest czytany ze standardowego wejścia." >&2
   exit 64
 }
 
-[[ $# -eq 1 ]] || usage
-report="$1"
-[[ -f "$report" ]] || { echo "FAIL: brak pliku raportu: $report" >&2; exit 66; }
+[[ $# -le 1 ]] || usage
+report="${1:--}"
 
-content="$(tr -d '\r' < "$report")"
+if [[ "$report" == "-" ]]; then
+  content="$(tr -d '\r')"
+else
+  [[ -f "$report" ]] || { echo "FAIL: brak pliku raportu: $report" >&2; exit 66; }
+  content="$(tr -d '\r' < "$report")"
+fi
+
+[[ -n "$content" ]] || { echo "FAIL: pusty raport" >&2; exit 1; }
 
 required_keys=(profile enabled worker status last_check last_success failures history_records)
 for key in "${required_keys[@]}"; do
