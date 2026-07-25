@@ -9,7 +9,7 @@ Sprawdza gotowość środowiska do wygenerowania i wysłania klucza release.
 Nie odczytuje ani nie wyświetla wartości sekretów.
 
 Opcje:
-  --dependencies-only  Sprawdź tylko lokalne zależności: keytool, base64 i gh.
+  --dependencies-only  Sprawdź tylko lokalne zależności: keytool, base64, mktemp i gh.
   --repo OWNER/REPO    Repozytorium GitHub (domyślnie llipinsk82-rgb/client-ssh).
   -h, --help           Pokaż pomoc.
 EOF
@@ -28,7 +28,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 missing=0
-for command in keytool base64 gh; do
+for command in keytool base64 mktemp gh; do
   if command -v "$command" >/dev/null 2>&1; then
     printf 'OK   %-8s %s\n' "$command" "$(command -v "$command")"
   else
@@ -95,4 +95,4 @@ if [[ ${#missing_secrets[@]} -gt 0 ]]; then
 fi
 
 echo
- echo "GOTOWE: zależności, autoryzacja, dostęp do repo i komplet nazw sekretów są poprawne."
+echo "GOTOWE: zależności, autoryzacja, dostęp do repo i komplet nazw sekretów są poprawne."
