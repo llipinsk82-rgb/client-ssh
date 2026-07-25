@@ -85,15 +85,31 @@ class HealthCheckWorker(
                 result = Result.success(),
             )
         }.getOrElse { error ->
+            val decision = healthWorkerFailureDecision(runAttemptCount)
             finish(
-                outcome = HealthCheckRunOutcome.RETRY,
+                outcome = decision.outcome,
                 detail = error.message.orEmpty().ifBlank { error::class.simpleName.orEmpty() },
-                result = Result.retry(),
+                result = if (decision.shouldRetry) Result.retry() else Result.failure(),
             )
         }
     }
 
     companion object {
         const val KEY_PROFILE_ID = "profile_id"
+        internal const val MAX_RETRY_ATTEMPTS = 3
     }
+}
+
+internal data class HealthWorkerFailureDecision(
+    val shouldRetry: Boolean,
+    val outcome: HealthCheckRunOutcome,
+)
+
+internal fun healthWorkerFailureDecision(runAttemptCount: Int): HealthWorkerFailureDecision {
+    require(runAttemptCount >= 0) { "runAttemptCount must not be negative" }
+    val shouldRetry = runAttemptCount < HealthCheckWorker.MAX_RETRY_ATTEMPTS
+    return HealthWorkerFailureDecision(
+        shouldRetry = shouldRetry,
+        outcome = if (shouldRetry) HealthCheckRunOutcome.RETRY else HealthCheckRunOutcome.FAILED,
+    )
 }
