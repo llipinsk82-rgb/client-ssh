@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit
 
 interface HealthWorkScheduler {
     fun schedule(config: HealthMonitorConfig)
+    fun runNow(profileId: String)
     fun cancel(profileId: String)
 }
 
@@ -50,7 +51,7 @@ class HealthMonitorScheduler(
      * Runs the same worker used by periodic monitoring as a one-time diagnostic job.
      * The periodic schedule is not replaced or delayed.
      */
-    fun runNow(profileId: String) {
+    override fun runNow(profileId: String) {
         require(profileId.isNotBlank()) { "profileId must not be blank" }
         val request = OneTimeWorkRequestBuilder<HealthCheckWorker>()
             .setConstraints(networkConstraints())
