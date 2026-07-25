@@ -5,6 +5,7 @@ enum class HealthCheckRunOutcome {
     SUCCESS,
     SKIPPED,
     RETRY,
+    FAILED,
 }
 
 data class HealthCheckRunDiagnostic(
