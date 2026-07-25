@@ -177,6 +177,28 @@ jobs:
           CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
           CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
         run: gradle :app:assembleRelease --stacktrace --console=plain
+      - name: Verify release APK metadata
+        if: env.RELEASE_SIGNING_ENABLED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          EXPECTED_PACKAGE="eu.blackserv.clientssh"
+          EXPECTED_VERSION_CODE="$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)"
+          EXPECTED_VERSION_NAME="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
+          BADGING="$($AAPT dump badging "$APK" | head -n 1)"
+          ACTUAL_PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+          ACTUAL_VERSION_CODE="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionCode='\([^']*\)'.*/\1/p")"
+          ACTUAL_VERSION_NAME="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionName='\([^']*\)'.*/\1/p")"
+          test "$ACTUAL_PACKAGE" = "$EXPECTED_PACKAGE"
+          test "$ACTUAL_VERSION_CODE" = "$EXPECTED_VERSION_CODE"
+          test "$ACTUAL_VERSION_NAME" = "$EXPECTED_VERSION_NAME"
+          cat > app/build/outputs/apk/release/APK_METADATA.txt <<EOF
+          package=$ACTUAL_PACKAGE
+          versionCode=$ACTUAL_VERSION_CODE
+          versionName=$ACTUAL_VERSION_NAME
+          EOF
       - name: Verify release certificate
         if: env.RELEASE_SIGNING_ENABLED == 'true'
         shell: bash
@@ -189,6 +211,7 @@ jobs:
           ACTUAL="$($APKSIGNER verify --verbose --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
           EXPECTED="$(printf '%s' "$CLIENT_SSH_RELEASE_CERT_SHA256" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
           test "$ACTUAL" = "$EXPECTED"
+          printf '%s\n' "$ACTUAL" > app/build/outputs/apk/release/CERTIFICATE_SHA256.txt
           sha256sum "$APK" | tee app/build/outputs/apk/release/SHA256SUMS.txt
       - name: Upload signed release APK
         if: env.RELEASE_SIGNING_ENABLED == 'true'
@@ -197,6 +220,8 @@ jobs:
           name: ${{ github.event_name == 'pull_request' && 'client-ssh-release-verification' || 'client-ssh-release' }}
           path: |
             app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/APK_METADATA.txt
+            app/build/outputs/apk/release/CERTIFICATE_SHA256.txt
             app/build/outputs/apk/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
