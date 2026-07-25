@@ -54,6 +54,7 @@ import eu.blackserv.clientssh.health.HealthCheckRunOutcome
 import eu.blackserv.clientssh.health.HealthCheckSnapshot
 import eu.blackserv.clientssh.health.HealthMonitorConfig
 import eu.blackserv.clientssh.health.HealthMonitorConfigRepository
+import eu.blackserv.clientssh.health.HealthMonitorController
 import eu.blackserv.clientssh.health.HealthMonitorScheduler
 import eu.blackserv.clientssh.health.HealthStatus
 import eu.blackserv.clientssh.health.HealthTarget
@@ -63,6 +64,7 @@ import eu.blackserv.clientssh.model.HostProfile
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -100,6 +102,15 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
         )
     }
     val scheduler = remember(appContext) { HealthMonitorScheduler(appContext) }
+    val controller = remember(configRepository, snapshotRepository, scheduler, historyRepository, diagnosticsRepository) {
+        HealthMonitorController(
+            configRepository = configRepository,
+            snapshotRepository = snapshotRepository,
+            scheduler = scheduler,
+            historyRepository = historyRepository,
+            diagnosticsRepository = diagnosticsRepository,
+        )
+    }
     val executor = remember(snapshotRepository, historyRepository) {
         HealthCheckExecutor(
             snapshotRepository = snapshotRepository,
@@ -116,6 +127,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
         mutableStateOf(diagnosticsRepository.getAll().associateBy { it.profileId })
     }
     var checkingProfileIds by remember { mutableStateOf(emptySet<String>()) }
+    var testingWorkerProfileIds by remember { mutableStateOf(emptySet<String>()) }
     var notificationsGranted by remember {
         mutableStateOf(
             Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -135,8 +147,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
     }
 
     fun save(config: HealthMonitorConfig) {
-        configRepository.upsert(config)
-        scheduler.schedule(config)
+        controller.save(config)
         refresh()
     }
 
@@ -159,6 +170,28 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
                 refresh()
             } finally {
                 checkingProfileIds = checkingProfileIds - profile.id
+            }
+        }
+    }
+
+    fun testWorkerNow(profileId: String) {
+        if (profileId in testingWorkerProfileIds) return
+        testingWorkerProfileIds = testingWorkerProfileIds + profileId
+        val previousStartedAt = diagnosticsRepository.get(profileId)?.startedAt
+        scope.launch {
+            try {
+                controller.testBackgroundWorkerNow(profileId)
+                repeat(WORKER_TEST_REFRESH_ATTEMPTS) {
+                    delay(WORKER_TEST_REFRESH_DELAY_MS)
+                    refresh()
+                    val current = diagnosticsRepository.get(profileId)
+                    if (current != null && current.startedAt != previousStartedAt && current.outcome != HealthCheckRunOutcome.RUNNING) {
+                        return@launch
+                    }
+                }
+            } finally {
+                refresh()
+                testingWorkerProfileIds = testingWorkerProfileIds - profileId
             }
         }
     }
@@ -218,8 +251,10 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
                         history = histories[profile.id].orEmpty(),
                         diagnostic = diagnostics[profile.id],
                         checking = profile.id in checkingProfileIds,
+                        testingWorker = profile.id in testingWorkerProfileIds,
                         onSave = ::save,
                         onCheckNow = { checkNow(profile, config) },
+                        onTestWorkerNow = { testWorkerNow(profile.id) },
                     )
                 }
             }
@@ -260,8 +295,10 @@ private fun HealthProfileCard(
     history: List<HealthCheckRecord>,
     diagnostic: HealthCheckRunDiagnostic?,
     checking: Boolean,
+    testingWorker: Boolean,
     onSave: (HealthMonitorConfig) -> Unit,
     onCheckNow: () -> Unit,
+    onTestWorkerNow: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     val statusColor = when (snapshot?.status ?: HealthStatus.UNKNOWN) {
@@ -333,7 +370,9 @@ private fun HealthProfileCard(
             BackgroundRunCard(
                 enabled = config.enabled,
                 diagnostic = diagnostic,
+                testing = testingWorker,
                 now = now,
+                onTestWorkerNow = onTestWorkerNow,
                 onCopyReport = {
                     clipboard.setText(
                         AnnotatedString(
@@ -419,19 +458,23 @@ private fun HealthProfileCard(
 private fun BackgroundRunCard(
     enabled: Boolean,
     diagnostic: HealthCheckRunDiagnostic?,
+    testing: Boolean,
     now: Long,
+    onTestWorkerNow: () -> Unit,
     onCopyReport: () -> Unit,
 ) {
     val label = when {
         !enabled -> "WYŁĄCZONY"
+        testing && diagnostic?.outcome != HealthCheckRunOutcome.RUNNING -> "ZLECONY"
         diagnostic == null -> "OCZEKUJE"
         else -> diagnostic.outcome.name
     }
     val labelColor = when {
         !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
         diagnostic?.outcome == HealthCheckRunOutcome.SUCCESS -> Color(0xFF3DDC84)
-        diagnostic?.outcome == HealthCheckRunOutcome.RETRY -> Color(0xFFFF7187)
-        diagnostic?.outcome == HealthCheckRunOutcome.RUNNING -> MaterialTheme.colorScheme.primary
+        diagnostic?.outcome == HealthCheckRunOutcome.RETRY || diagnostic?.outcome == HealthCheckRunOutcome.FAILED ->
+            Color(0xFFFF7187)
+        diagnostic?.outcome == HealthCheckRunOutcome.RUNNING || testing -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Card(
@@ -450,6 +493,10 @@ private fun BackgroundRunCard(
             }
             when {
                 !enabled -> Text("Okresowy pomiar jest wyłączony.", style = MaterialTheme.typography.bodySmall)
+                testing && diagnostic?.outcome != HealthCheckRunOutcome.RUNNING -> Text(
+                    "Test został zlecony. Oczekiwanie na uruchomienie przez Androida…",
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 diagnostic == null -> Text(
                     "Zadanie jest zaplanowane; Android wybierze dokładny czas wykonania.",
                     style = MaterialTheme.typography.bodySmall,
@@ -469,6 +516,13 @@ private fun BackgroundRunCard(
                         Text(diagnostic.detail, style = MaterialTheme.typography.bodySmall)
                     }
                 }
+            }
+            Button(
+                onClick = onTestWorkerNow,
+                enabled = enabled && !testing,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (testing) "Testowanie workera…" else "Testuj worker w tle")
             }
             OutlinedButton(onClick = onCopyReport, modifier = Modifier.fillMaxWidth()) {
                 Text("Kopiuj raport testowy")
@@ -510,3 +564,6 @@ internal fun healthTimestampLabel(timestamp: Long, now: Long = System.currentTim
         else -> DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(timestamp))
     }
 }
+
+private const val WORKER_TEST_REFRESH_ATTEMPTS = 60
+private const val WORKER_TEST_REFRESH_DELAY_MS = 500L
