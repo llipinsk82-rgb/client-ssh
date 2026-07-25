@@ -20,6 +20,23 @@ Opcje:
 EOF
 }
 
+missing_command() {
+  local command="$1"
+  echo "Brak wymaganego polecenia: $command" >&2
+  case "$command" in
+    keytool)
+      echo "Debian/Ubuntu: sudo apt update && sudo apt install -y openjdk-17-jdk" >&2
+      ;;
+    base64)
+      echo "Debian/Ubuntu: sudo apt update && sudo apt install -y coreutils" >&2
+      ;;
+    gh)
+      echo "Zainstaluj GitHub CLI i wykonaj: gh auth login" >&2
+      ;;
+  esac
+  exit 69
+}
+
 upload=false
 repo=""
 output_dir="${HOME}/.client-ssh/signing"
@@ -35,14 +52,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 for command in keytool base64; do
-  command -v "$command" >/dev/null || {
-    echo "Brak wymaganego polecenia: $command" >&2
-    exit 69
-  }
+  command -v "$command" >/dev/null || missing_command "$command"
 done
 
 if [[ "$upload" == true ]]; then
-  command -v gh >/dev/null || { echo "Brak GitHub CLI (`gh`)." >&2; exit 69; }
+  command -v gh >/dev/null || missing_command gh
   gh auth status >/dev/null
   if [[ -z "$repo" ]]; then
     repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
