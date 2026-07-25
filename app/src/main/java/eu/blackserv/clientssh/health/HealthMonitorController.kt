@@ -19,6 +19,14 @@ class HealthMonitorController(
         return saved
     }
 
+    fun testBackgroundWorkerNow(profileId: String) {
+        require(profileId.isNotBlank()) { "profileId must not be blank" }
+        val config = configRepository.get(profileId)
+            ?: throw IllegalStateException("Health monitoring is not configured for this profile")
+        check(config.enabled) { "Health monitoring must be enabled before testing the background worker" }
+        scheduler.runNow(profileId)
+    }
+
     fun removeProfile(profileId: String) {
         require(profileId.isNotBlank()) { "profileId must not be blank" }
         scheduler.cancel(profileId)
