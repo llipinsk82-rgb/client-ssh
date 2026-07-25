@@ -24,10 +24,8 @@ Celem testu jest potwierdzenie, że pomiary TCP wykonują się ręcznie i przez 
 
 ## 2. Jednorazowy test prawdziwego workera
 
-Po udostępnieniu akcji **Testuj worker teraz**:
-
-1. Włącz monitoring profilem przełącznika.
-2. Naciśnij **Testuj worker teraz**.
+1. Włącz monitoring przełącznikiem profilu.
+2. Naciśnij **Testuj worker w tle**.
 3. Obserwuj sekcję **Worker w tle**.
 4. Po zakończeniu wybierz **Kopiuj raport testowy**.
 
@@ -44,7 +42,7 @@ Po udostępnieniu akcji **Testuj worker teraz**:
 2. Zanotuj czas ostatniego pomiaru oraz ostatniego workera.
 3. Zamknij aplikację z ekranu ostatnich aplikacji. Nie używaj `Force stop`.
 4. Pozostaw telefon z aktywną siecią przez co najmniej 20–30 minut.
-5. Otwórz aplikację i zakładkę **Monitor**.
+5. Otwórz aplikację i wejdź do zakładki **Monitor**. Jeżeli aplikacja została pozostawiona bezpośrednio na tym ekranie, przejdź na chwilę do innej zakładki i wróć do **Monitor**, aby wymusić świeży odczyt trwałego stanu.
 6. Skopiuj raport testowy.
 
 ### PASS
@@ -98,7 +96,7 @@ Na Androidzie 13 lub nowszym odmów zgody `POST_NOTIFICATIONS`.
 1. Pozostaw monitoring włączony.
 2. Uruchom ponownie telefon.
 3. Nie otwieraj aplikacji przez co najmniej 20–30 minut, zachowując dostęp do sieci.
-4. Otwórz Monitor i skopiuj raport.
+4. Otwórz aplikację, wejdź do zakładki **Monitor** i skopiuj raport.
 
 ### PASS
 
