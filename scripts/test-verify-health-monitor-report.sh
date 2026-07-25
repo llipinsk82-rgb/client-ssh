@@ -24,19 +24,26 @@ printf '%s\n' "$valid_report" > "$tmpdir/valid.txt"
 printf '%s\n' "$valid_report" | "$validator" | grep -q '^PASS:'
 printf '%s\n' "$valid_report" | "$validator" - | grep -q '^PASS:'
 
-if printf '%s\n' "${valid_report/worker=SUCCESS/worker=RETRY}" | "$validator" >/dev/null 2>&1; then
-  echo "FAIL: RETRY powinien zostać odrzucony" >&2
-  exit 1
-fi
+expect_rejected() {
+  local description="$1"
+  local report_content="$2"
+  if printf '%s\n' "$report_content" | "$validator" >/dev/null 2>&1; then
+    echo "FAIL: zaakceptowano: $description" >&2
+    exit 1
+  fi
+}
 
-if printf '%s\nhost=example.invalid\n' "$valid_report" | "$validator" >/dev/null 2>&1; then
-  echo "FAIL: raport z hostem powinien zostać odrzucony" >&2
-  exit 1
-fi
+expect_rejected "worker=RETRY" "${valid_report/worker=SUCCESS/worker=RETRY}"
+expect_rejected "jawne pole host" "${valid_report}"$'\n''host=example.invalid'
+expect_rejected "pole host ze spacjami" "${valid_report}"$'\n''  host = example.invalid'
+expect_rejected "wariant private-key" "${valid_report}"$'\n''private-key = should-never-appear'
+expect_rejected "zduplikowany worker" "${valid_report}"$'\n''worker=SUCCESS'
+expect_rejected "zduplikowany status z inną wartością" "${valid_report}"$'\n''status=OFFLINE'
+expect_rejected "niepełna diagnostyka workera" "$(printf '%s\n' "$valid_report" | grep -v '^worker_finished=')"
 
 if printf '' | "$validator" >/dev/null 2>&1; then
   echo "FAIL: pusty raport powinien zostać odrzucony" >&2
   exit 1
 fi
 
-echo "PASS: verify-health-monitor-report.sh file/stdin regression suite"
+echo "PASS: verify-health-monitor-report.sh hardened regression suite"
