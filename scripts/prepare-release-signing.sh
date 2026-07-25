@@ -8,6 +8,10 @@ Użycie: scripts/prepare-release-signing.sh [--upload] [--repo OWNER/REPO] [--ou
 Generuje nowy klucz Android release poza repozytorium, wyświetla fingerprint
 SHA-256 i opcjonalnie zapisuje wymagane GitHub Actions Secrets przez GitHub CLI.
 
+Hasła są pobierane interaktywnie. Do automatycznego testu można przekazać:
+  CLIENT_SSH_RELEASE_STORE_PASSWORD
+  CLIENT_SSH_RELEASE_KEY_PASSWORD
+
 Opcje:
   --upload          Wyślij sekrety przez `gh secret set` po wygenerowaniu klucza.
   --repo OWNER/REPO Repozytorium dla --upload (domyślnie z `gh repo view`).
@@ -58,18 +62,25 @@ if [[ -e "$keystore" ]]; then
   exit 73
 fi
 
-read -r -s -p "Hasło magazynu (min. 16 znaków): " store_password
-echo
-read -r -s -p "Powtórz hasło magazynu: " store_password_repeat
-echo
-[[ "$store_password" == "$store_password_repeat" ]] || { echo "Hasła magazynu nie są identyczne." >&2; exit 65; }
+store_password="${CLIENT_SSH_RELEASE_STORE_PASSWORD:-}"
+key_password="${CLIENT_SSH_RELEASE_KEY_PASSWORD:-}"
+
+if [[ -z "$store_password" ]]; then
+  read -r -s -p "Hasło magazynu (min. 16 znaków): " store_password
+  echo
+  read -r -s -p "Powtórz hasło magazynu: " store_password_repeat
+  echo
+  [[ "$store_password" == "$store_password_repeat" ]] || { echo "Hasła magazynu nie są identyczne." >&2; exit 65; }
+fi
 [[ ${#store_password} -ge 16 ]] || { echo "Hasło magazynu jest za krótkie." >&2; exit 65; }
 
-read -r -s -p "Hasło klucza (min. 16 znaków): " key_password
-echo
-read -r -s -p "Powtórz hasło klucza: " key_password_repeat
-echo
-[[ "$key_password" == "$key_password_repeat" ]] || { echo "Hasła klucza nie są identyczne." >&2; exit 65; }
+if [[ -z "$key_password" ]]; then
+  read -r -s -p "Hasło klucza (min. 16 znaków): " key_password
+  echo
+  read -r -s -p "Powtórz hasło klucza: " key_password_repeat
+  echo
+  [[ "$key_password" == "$key_password_repeat" ]] || { echo "Hasła klucza nie są identyczne." >&2; exit 65; }
+fi
 [[ ${#key_password} -ge 16 ]] || { echo "Hasło klucza jest za krótkie." >&2; exit 65; }
 
 keytool -genkeypair \
