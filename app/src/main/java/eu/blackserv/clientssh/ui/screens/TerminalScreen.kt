@@ -49,6 +49,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -76,6 +81,8 @@ private data class TerminalShortcut(
     val enabled: Boolean = true,
     val action: () -> Unit,
 )
+
+internal fun terminalCompletionInput(command: String): String = command + "\t"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -150,6 +157,12 @@ fun TerminalScreen(
         TerminalSessionBus.send(bytes)
     }
 
+    fun requestCompletion() {
+        if (!controlsEnabled) return
+        TerminalSessionBus.send(terminalCompletionInput(command))
+        command = ""
+    }
+
     val shortcuts = buildList {
         favorites.forEach { favorite ->
             add(
@@ -160,7 +173,7 @@ fun TerminalScreen(
         }
         add(TerminalShortcut("ENTER", controlsEnabled) { sendRaw("\r") })
         add(TerminalShortcut("CTRL+C", controlsEnabled) { sendRaw(byteArrayOf(3)) })
-        add(TerminalShortcut("TAB", controlsEnabled) { sendRaw("\t") })
+        add(TerminalShortcut("TAB", controlsEnabled) { requestCompletion() })
         add(TerminalShortcut("CTRL+D", controlsEnabled) { sendRaw(byteArrayOf(4)) })
         add(TerminalShortcut("↑", controlsEnabled) { sendRaw("\u001B[A") })
         add(TerminalShortcut("↓", controlsEnabled) { sendRaw("\u001B[B") })
@@ -264,7 +277,16 @@ fun TerminalScreen(
                 OutlinedTextField(
                     value = command,
                     onValueChange = { command = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown && event.key == Key.Tab) {
+                                requestCompletion()
+                                true
+                            } else {
+                                false
+                            }
+                        },
                     placeholder = { Text("Komenda…") },
                     singleLine = true,
                     enabled = controlsEnabled,
