@@ -118,6 +118,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
             historyRepository = historyRepository,
         )
     }
+
     var configs by remember { mutableStateOf(configRepository.getAll().associateBy { it.profileId }) }
     var snapshots by remember { mutableStateOf(snapshotRepository.getAll().associateBy { it.profileId }) }
     var histories by remember(profiles) {
@@ -130,9 +131,13 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
     var testingWorkerProfileIds by remember { mutableStateOf(emptySet<String>()) }
     var notificationsGranted by remember {
         mutableStateOf(
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-                PackageManager.PERMISSION_GRANTED,
+            healthNotificationsGranted(
+                sdkInt = Build.VERSION.SDK_INT,
+                permissionGranted = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED,
+            ),
         )
     }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -144,6 +149,17 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
         snapshots = snapshotRepository.getAll().associateBy { it.profileId }
         histories = profiles.associate { it.id to historyRepository.get(it.id) }
         diagnostics = diagnosticsRepository.getAll().associateBy { it.profileId }
+    }
+
+    RefreshOnResume {
+        refresh()
+        notificationsGranted = healthNotificationsGranted(
+            sdkInt = Build.VERSION.SDK_INT,
+            permissionGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED,
+        )
     }
 
     fun save(config: HealthMonitorConfig) {
@@ -185,7 +201,11 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
                     delay(WORKER_TEST_REFRESH_DELAY_MS)
                     refresh()
                     val current = diagnosticsRepository.get(profileId)
-                    if (current != null && current.startedAt != previousStartedAt && current.outcome != HealthCheckRunOutcome.RUNNING) {
+                    if (
+                        current != null &&
+                        current.startedAt != previousStartedAt &&
+                        current.outcome != HealthCheckRunOutcome.RUNNING
+                    ) {
                         return@launch
                     }
                 }
@@ -530,6 +550,9 @@ private fun BackgroundRunCard(
         }
     }
 }
+
+internal fun healthNotificationsGranted(sdkInt: Int, permissionGranted: Boolean): Boolean =
+    sdkInt < Build.VERSION_CODES.TIRAMISU || permissionGranted
 
 internal fun healthBackgroundReport(
     profileId: String,
