@@ -1,5 +1,6 @@
 package eu.blackserv.clientssh.ui.screens
 
+import android.os.Build
 import eu.blackserv.clientssh.health.HealthCheckRunDiagnostic
 import eu.blackserv.clientssh.health.HealthCheckRunOutcome
 import eu.blackserv.clientssh.health.HealthCheckSnapshot
@@ -22,6 +23,32 @@ class HealthMonitorScreenTest {
     @Test
     fun `future timestamp is treated as just now`() {
         assertEquals("przed chwilą", healthTimestampLabel(timestamp = 20_000L, now = 10_000L))
+    }
+
+    @Test
+    fun `notification permission is not required before Android 13`() {
+        assertTrue(
+            healthNotificationsGranted(
+                sdkInt = Build.VERSION_CODES.S_V2,
+                permissionGranted = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `notification permission reflects current Android 13 permission state`() {
+        assertFalse(
+            healthNotificationsGranted(
+                sdkInt = Build.VERSION_CODES.TIRAMISU,
+                permissionGranted = false,
+            ),
+        )
+        assertTrue(
+            healthNotificationsGranted(
+                sdkInt = Build.VERSION_CODES.TIRAMISU,
+                permissionGranted = true,
+            ),
+        )
     }
 
     @Test
