@@ -24,6 +24,11 @@ jobs:
       - name: Reject committed signing secrets
         shell: bash
         run: bash scripts/check-no-release-secrets.sh
+      - name: Validate release signing helper
+        shell: bash
+        run: |
+          bash -n scripts/prepare-release-signing.sh
+          bash scripts/prepare-release-signing.sh --help >/dev/null
       - name: Test Health Monitor report validator
         shell: bash
         run: |
