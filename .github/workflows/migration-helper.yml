@@ -6,7 +6,6 @@ on:
       - '.github/workflows/migration-helper.yml'
       - 'app/build.gradle.kts'
       - 'app/src/main/AndroidManifest.xml'
-      - 'app/src/main/java/eu/blackserv/clientssh/ClientSshApplication.kt'
       - 'app/src/main/java/eu/blackserv/clientssh/backup/**'
       - 'app/src/main/java/eu/blackserv/clientssh/ui/screens/SettingsScreen.kt'
       - 'app/src/test/java/eu/blackserv/clientssh/backup/**'
