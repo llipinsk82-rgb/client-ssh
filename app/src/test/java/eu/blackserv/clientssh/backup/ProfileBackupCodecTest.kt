@@ -129,6 +129,32 @@ class ProfileBackupCodecTest {
     }
 
     @Test
+    fun `excessively long backup password is rejected`() {
+        val error = expectBackupFailure {
+            ProfileBackupCodec.encrypt(
+                listOf(validKeyProfile()),
+                CharArray(ProfileBackupCodec.MAX_PASSWORD_CHARS + 1) { 'x' },
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains(ProfileBackupCodec.MAX_PASSWORD_CHARS.toString()))
+    }
+
+    @Test
+    fun `aggregate plaintext limit is enforced before encryption`() {
+        val largeKey = "k".repeat(2 * 1024 * 1024)
+        val profiles = (1..4).map { index ->
+            validKeyProfile().copy(id = "key-profile-$index", privateKey = largeKey)
+        }
+
+        val error = expectBackupFailure {
+            ProfileBackupCodec.encrypt(profiles, password.copyOf())
+        }
+
+        assertTrue(error.message.orEmpty().contains("rozmiar"))
+    }
+
+    @Test
     fun `trailing bytes are rejected`() {
         val encrypted = ProfileBackupCodec.encrypt(listOf(validKeyProfile()), password.copyOf())
         val extended = encrypted + byteArrayOf(1, 2, 3)
