@@ -27,14 +27,16 @@ object ProfileBackupCodec {
     private const val KDF_ID = 1
     private const val KDF_ITERATIONS = 600_000
     private const val MIN_KDF_ITERATIONS = 100_000
-    private const val MAX_KDF_ITERATIONS = 2_000_000
+    private const val MAX_KDF_ITERATIONS = 1_000_000
     private const val SALT_BYTES = 16
     private const val NONCE_BYTES = 12
     private const val KEY_BITS = 256
     private const val GCM_TAG_BITS = 128
     private const val GCM_TAG_BYTES = GCM_TAG_BITS / 8
+    private const val MAX_HEADER_BYTES = 128
 
     const val MIN_PASSWORD_CHARS = 16
+    const val MAX_PASSWORD_CHARS = 1_024
     const val MAX_CONTAINER_BYTES = 8 * 1024 * 1024
 
     private const val MAX_PROFILES = 500
@@ -54,8 +56,13 @@ object ProfileBackupCodec {
     ): ByteArray {
         validatePassword(password)
         validateProfiles(profiles)
+        validateAggregateSize(profiles)
 
         val plaintext = encodePayload(profiles)
+        if (plaintext.size + GCM_TAG_BYTES + MAX_HEADER_BYTES > MAX_CONTAINER_BYTES) {
+            plaintext.fill(0)
+            fail("Backup przekracza dozwolony rozmiar.")
+        }
         val salt = ByteArray(SALT_BYTES).also { secureRandom.nextBytes(it) }
         val nonce = ByteArray(NONCE_BYTES).also { secureRandom.nextBytes(it) }
         val ciphertextLength = plaintext.size + GCM_TAG_BYTES
@@ -73,7 +80,7 @@ object ProfileBackupCodec {
             val ciphertext = cipher.doFinal(plaintext)
             if (ciphertext.size != ciphertextLength) {
                 ciphertext.fill(0)
-                throw ProfileBackupException("Nie udało się utworzyć kompletnego backupu.")
+                fail("Nie udało się utworzyć kompletnego backupu.")
             }
             val result = ByteArrayOutputStream(header.size + ciphertext.size).use { output ->
                 output.write(header)
@@ -83,7 +90,7 @@ object ProfileBackupCodec {
             ciphertext.fill(0)
             if (result.size > MAX_CONTAINER_BYTES) {
                 result.fill(0)
-                throw ProfileBackupException("Backup przekracza dozwolony rozmiar.")
+                fail("Backup przekracza dozwolony rozmiar.")
             }
             return result
         } catch (error: ProfileBackupException) {
@@ -102,7 +109,7 @@ object ProfileBackupCodec {
     fun decrypt(container: ByteArray, password: CharArray): List<HostProfile> {
         validatePassword(password)
         if (container.isEmpty() || container.size > MAX_CONTAINER_BYTES) {
-            throw ProfileBackupException("Nieprawidłowy rozmiar pliku backupu.")
+            fail("Nieprawidłowy rozmiar pliku backupu.")
         }
 
         val parsed = parseHeader(container)
@@ -164,6 +171,9 @@ object ProfileBackupCodec {
     }
 
     private fun parseHeader(container: ByteArray): ParsedHeader {
+        var salt: ByteArray? = null
+        var nonce: ByteArray? = null
+        var success = false
         try {
             val input = ByteArrayInputStream(container)
             val data = DataInputStream(input)
@@ -178,10 +188,10 @@ object ProfileBackupCodec {
             }
             val saltLength = data.readUnsignedByte()
             if (saltLength != SALT_BYTES) fail("Nieprawidłowa sól backupu.")
-            val salt = ByteArray(saltLength).also { data.readFully(it) }
+            salt = ByteArray(saltLength).also { data.readFully(it) }
             val nonceLength = data.readUnsignedByte()
             if (nonceLength != NONCE_BYTES) fail("Nieprawidłowy nonce backupu.")
-            val nonce = ByteArray(nonceLength).also { data.readFully(it) }
+            nonce = ByteArray(nonceLength).also { data.readFully(it) }
             val ciphertextLength = data.readInt()
             if (ciphertextLength !in GCM_TAG_BYTES..MAX_CONTAINER_BYTES) {
                 fail("Nieprawidłowa długość zaszyfrowanych danych.")
@@ -190,7 +200,7 @@ object ProfileBackupCodec {
             if (input.available() != ciphertextLength) {
                 fail("Backup jest obcięty albo zawiera nadmiarowe dane.")
             }
-            return ParsedHeader(
+            val parsed = ParsedHeader(
                 iterations = iterations,
                 salt = salt,
                 nonce = nonce,
@@ -198,10 +208,17 @@ object ProfileBackupCodec {
                 ciphertextLength = ciphertextLength,
                 header = container.copyOfRange(0, ciphertextOffset),
             )
+            success = true
+            return parsed
         } catch (error: ProfileBackupException) {
             throw error
         } catch (_: Throwable) {
             throw ProfileBackupException("Uszkodzony nagłówek backupu.")
+        } finally {
+            if (!success) {
+                salt?.fill(0)
+                nonce?.fill(0)
+            }
         }
     }
 
@@ -218,8 +235,9 @@ object ProfileBackupCodec {
         }
     }
 
-    private fun encodePayload(profiles: List<HostProfile>): ByteArray =
-        ByteArrayOutputStream().use { output ->
+    private fun encodePayload(profiles: List<HostProfile>): ByteArray {
+        val output = WipingByteArrayOutputStream()
+        return try {
             DataOutputStream(output).use { data ->
                 data.write(payloadMagic)
                 data.writeInt(PAYLOAD_VERSION)
@@ -238,7 +256,10 @@ object ProfileBackupCodec {
                 }
             }
             output.toByteArray()
+        } finally {
+            output.wipe()
         }
+    }
 
     private fun decodePayload(plaintext: ByteArray): List<HostProfile> {
         try {
@@ -276,9 +297,10 @@ object ProfileBackupCodec {
     }
 
     private fun validatePassword(password: CharArray) {
-        if (password.size < MIN_PASSWORD_CHARS) {
-            fail("Hasło backupu musi mieć co najmniej $MIN_PASSWORD_CHARS znaków.")
+        if (password.size !in MIN_PASSWORD_CHARS..MAX_PASSWORD_CHARS) {
+            fail("Hasło backupu musi mieć od $MIN_PASSWORD_CHARS do $MAX_PASSWORD_CHARS znaków.")
         }
+        if ('\u0000' in password) fail("Hasło backupu zawiera niedozwolony znak.")
     }
 
     private fun validateProfiles(profiles: List<HostProfile>) {
@@ -297,6 +319,34 @@ object ProfileBackupCodec {
             if (profile.authenticationMethod == AuthenticationMethod.PRIVATE_KEY && profile.privateKey.isBlank()) {
                 fail("Profil klucza prywatnego nie zawiera klucza.")
             }
+        }
+    }
+
+    private fun validateAggregateSize(profiles: List<HostProfile>) {
+        var total = payloadMagic.size.toLong() + Int.SIZE_BYTES + Int.SIZE_BYTES
+        profiles.forEach { profile ->
+            total += Int.SIZE_BYTES
+            total += encodedStringSize(profile.id)
+            total += encodedStringSize(profile.name)
+            total += encodedStringSize(profile.host)
+            total += encodedStringSize(profile.username)
+            total += encodedStringSize(profile.protocol.name)
+            total += encodedStringSize(profile.authenticationMethod.name)
+            total += encodedStringSize(profile.password)
+            total += encodedStringSize(profile.privateKey)
+            total += encodedStringSize(profile.privateKeyPassphrase)
+            if (total + GCM_TAG_BYTES + MAX_HEADER_BYTES > MAX_CONTAINER_BYTES) {
+                fail("Backup przekracza dozwolony rozmiar.")
+            }
+        }
+    }
+
+    private fun encodedStringSize(value: String): Long {
+        val bytes = value.toByteArray(StandardCharsets.UTF_8)
+        return try {
+            Int.SIZE_BYTES.toLong() + bytes.size
+        } finally {
+            bytes.fill(0)
         }
     }
 
@@ -343,4 +393,11 @@ object ProfileBackupCodec {
             ?: throw ProfileBackupException("Backup zawiera nieznaną wartość konfiguracji.")
 
     private fun fail(message: String): Nothing = throw ProfileBackupException(message)
+
+    private class WipingByteArrayOutputStream : ByteArrayOutputStream() {
+        fun wipe() {
+            buf.fill(0)
+            reset()
+        }
+    }
 }
