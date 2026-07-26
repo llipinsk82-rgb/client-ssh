@@ -135,7 +135,7 @@ class TerminalSessionService : Service() {
     }
 
     override fun onDestroy() {
-        HostKeyTrustBus.cancelPending()
+        HostKeyTrustBus.cancelUnknown()
         connectionJob?.cancel()
         reconnectJob?.cancel()
         closeTransport()
@@ -172,11 +172,21 @@ class TerminalSessionService : Service() {
     }
 
     private suspend fun runSsh(profile: HostProfile, reconnecting: Boolean) {
+        var isReconnectAttempt = reconnecting
+        while (maintainSession) {
+            val retryAfterTrust = runSshAttempt(profile, isReconnectAttempt)
+            if (!retryAfterTrust) return
+            isReconnectAttempt = false
+        }
+    }
+
+    private suspend fun runSshAttempt(profile: HostProfile, reconnecting: Boolean): Boolean {
         val jsch = JSch()
         val host = profile.host.trim()
         val username = profile.username.trim()
         var connectedOnce = false
         var shellEndedNormally = false
+        var trustRepository: InteractiveHostKeyRepository? = null
 
         if (reconnecting && TerminalSessionBus.snapshot.value.state != TerminalConnectionState.CONNECTING) {
             TerminalSessionBus.markReconnecting(profile)
@@ -207,12 +217,13 @@ class TerminalSessionService : Service() {
                 }
             }
 
+            trustRepository = InteractiveHostKeyRepository(
+                delegate = jsch.hostKeyRepository,
+                displayHost = host,
+                port = profile.port,
+            )
             val session = jsch.getSession(username, host, profile.port).apply {
-                hostKeyRepository = InteractiveHostKeyRepository(
-                    delegate = jsch.hostKeyRepository,
-                    displayHost = host,
-                    port = profile.port,
-                )
+                hostKeyRepository = trustRepository
                 if (profile.authenticationMethod == AuthenticationMethod.PASSWORD) setPassword(profile.password)
                 setConfig("StrictHostKeyChecking", "yes")
                 setConfig(
@@ -274,9 +285,51 @@ class TerminalSessionService : Service() {
                 maintainSession && sessionKeeperEnabled -> scheduleReconnect(profile, "Powłoka SSH została przerwana.")
                 else -> finishShellSession(profile, "Sesja zakończona")
             }
+            return false
         } catch (_: CancellationException) {
             throw CancellationException()
         } catch (error: Throwable) {
+            val trustRequest = HostKeyTrustBus.pendingUnknownFor(host, profile.port)
+            if (trustRequest != null) {
+                TerminalSessionBus.markAwaitingHostKey(profile)
+                updateNotification(
+                    profile.name,
+                    "Otwórz aplikację i zweryfikuj fingerprint hosta SSH",
+                    profile.id,
+                )
+
+                val trusted = HostKeyTrustBus.awaitDecision(
+                    trustRequest.id,
+                    HOST_KEY_TRUST_TIMEOUT_MS,
+                )
+                if (!trusted) {
+                    trustRepository?.discard(trustRequest.id)
+                    failPermanently(
+                        profile,
+                        "Klucz hosta SSH nie został zaakceptowany. Połączenie zostało zablokowane.",
+                    )
+                    return false
+                }
+
+                val persisted = trustRepository?.persist(trustRequest.id) == true
+                if (!persisted) {
+                    failPermanently(
+                        profile,
+                        "Nie udało się bezpiecznie zapisać zweryfikowanego klucza hosta SSH.",
+                    )
+                    return false
+                }
+
+                if (!maintainSession) return false
+                TerminalSessionBus.markReconnecting(
+                    profile = profile,
+                    status = "Ponowne łączenie po weryfikacji…",
+                    notice = "Fingerprint hosta został zaakceptowany. Rozpoczynam nowe połączenie SSH.",
+                )
+                updateNotification(profile.name, "Ponowne łączenie po weryfikacji hosta…", profile.id)
+                return true
+            }
+
             val readable = error.toSafeSshMessage(host)
             val sessionWasPreviouslyConnected = connectedOnce || sessionPrefs.getBoolean(KEY_SESSION_WAS_CONNECTED, false)
             if (maintainSession && sessionKeeperEnabled && sessionWasPreviouslyConnected && error.isRetryableSshError()) {
@@ -284,7 +337,9 @@ class TerminalSessionService : Service() {
             } else {
                 failPermanently(profile, readable)
             }
+            return false
         } finally {
+            trustRepository?.discardAll()
             TerminalSessionBus.detachWriter()
             closeTransport()
             jsch.removeAllIdentity()
@@ -335,7 +390,7 @@ class TerminalSessionService : Service() {
 
     private fun disconnectAndStop(startId: Int, message: String) {
         maintainSession = false
-        HostKeyTrustBus.cancelPending()
+        HostKeyTrustBus.cancelUnknown()
         reconnectJob?.cancel()
         connectionJob?.cancel()
         closeTransport()
@@ -437,6 +492,7 @@ class TerminalSessionService : Service() {
         private const val KEY_SESSION_WAS_CONNECTED = "session_was_connected"
         private const val CONNECT_TIMEOUT_MS = 15_000
         private const val CHANNEL_TIMEOUT_MS = 10_000
+        private const val HOST_KEY_TRUST_TIMEOUT_MS = 120_000L
         private const val KEEPALIVE_INTERVAL_MS = 15_000
         private const val KEEPALIVE_MAX_MISSES = 3
         private const val RECONNECT_DELAY_MS = 5_000L
