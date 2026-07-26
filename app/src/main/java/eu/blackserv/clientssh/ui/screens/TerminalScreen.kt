@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -56,6 +58,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eu.blackserv.clientssh.model.FavoriteCommand
@@ -81,6 +84,8 @@ private data class TerminalShortcut(
 )
 
 internal fun terminalCompletionInput(command: String): String = command + "\t"
+
+internal fun terminalSubmitInput(command: String): String = command + "\r"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -140,7 +145,7 @@ fun TerminalScreen(
 
     fun sendCommand(text: String) {
         if (text.isBlank() || !controlsEnabled) return
-        TerminalSessionBus.send(text + "\r")
+        TerminalSessionBus.send(terminalSubmitInput(text))
         command = ""
     }
 
@@ -152,6 +157,12 @@ fun TerminalScreen(
     fun sendRaw(bytes: ByteArray) {
         if (!controlsEnabled) return
         TerminalSessionBus.send(bytes)
+    }
+
+    fun submitInteractiveInput() {
+        if (!controlsEnabled) return
+        TerminalSessionBus.send(terminalSubmitInput(command))
+        command = ""
     }
 
     fun requestCompletion() {
@@ -168,7 +179,7 @@ fun TerminalScreen(
                 },
             )
         }
-        add(TerminalShortcut("ENTER", controlsEnabled) { sendRaw("\r") })
+        add(TerminalShortcut("ENTER", controlsEnabled) { submitInteractiveInput() })
         add(TerminalShortcut("CTRL+C", controlsEnabled) { sendRaw(byteArrayOf(3)) })
         add(TerminalShortcut("TAB", controlsEnabled) { requestCompletion() })
         add(TerminalShortcut("CTRL+D", controlsEnabled) { sendRaw(byteArrayOf(4)) })
@@ -272,20 +283,31 @@ fun TerminalScreen(
                     modifier = Modifier
                         .weight(1f)
                         .onPreviewKeyEvent { event ->
-                            if (event.type == KeyEventType.KeyDown && event.key == Key.Tab) {
-                                requestCompletion()
-                                true
-                            } else {
+                            if (event.type != KeyEventType.KeyDown) {
                                 false
+                            } else {
+                                when (event.key) {
+                                    Key.Tab -> {
+                                        requestCompletion()
+                                        true
+                                    }
+                                    Key.Enter -> {
+                                        submitInteractiveInput()
+                                        true
+                                    }
+                                    else -> false
+                                }
                             }
                         },
                     placeholder = { Text("Komenda…") },
                     singleLine = true,
                     enabled = controlsEnabled,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { submitInteractiveInput() }),
                 )
                 Button(
                     enabled = controlsEnabled && command.isNotBlank(),
-                    onClick = { sendCommand(command) },
+                    onClick = { submitInteractiveInput() },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = TerminalGreen,
                         contentColor = Color(0xFF031008),
