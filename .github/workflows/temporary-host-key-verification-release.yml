@@ -1,0 +1,125 @@
+name: Temporary 0.3.6 host key verification v41
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-host-key-v41-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: >-
+      github.event.pull_request.number == 31 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/0.3.6-host-key-verification' &&
+      github.actor == 'llipinsk82-rgb'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 7e76bcc2fc4d7ae5d8fae486c41b421253a7a33d
+          persist-credentials: false
+      - name: Reject committed signing secrets
+        shell: bash
+        run: bash scripts/check-no-release-secrets.sh
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses >/dev/null || true
+      - name: Install Android SDK 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Check required release secrets
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+          CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
+          CLIENT_SSH_RELEASE_CERT_SHA256: ${{ secrets.CLIENT_SSH_RELEASE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          test -n "$CLIENT_SSH_RELEASE_KEYSTORE_B64"
+          test -n "$CLIENT_SSH_RELEASE_STORE_PASSWORD"
+          test -n "$CLIENT_SSH_RELEASE_KEY_ALIAS"
+          test -n "$CLIENT_SSH_RELEASE_KEY_PASSWORD"
+          test -n "$CLIENT_SSH_RELEASE_CERT_SHA256"
+      - name: Restore release signing key
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          mkdir -p app/signing
+          printf '%s' "$CLIENT_SSH_RELEASE_KEYSTORE_B64" | base64 --decode > app/signing/client-ssh-release.jks
+          chmod 600 app/signing/client-ssh-release.jks
+          STOREPASS_FILE="${RUNNER_TEMP}/client-ssh-release-storepass"
+          printf '%s\n' "$CLIENT_SSH_RELEASE_STORE_PASSWORD" > "$STOREPASS_FILE"
+          chmod 600 "$STOREPASS_FILE"
+          keytool -list \
+            -keystore app/signing/client-ssh-release.jks \
+            -storepass:file "$STOREPASS_FILE" \
+            -alias "$CLIENT_SSH_RELEASE_KEY_ALIAS" >/dev/null
+      - name: Run unit tests
+        shell: bash
+        run: gradle :app:testDebugUnitTest --stacktrace --console=plain
+      - name: Build signed release APK
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+          CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --stacktrace --console=plain
+      - name: Verify APK metadata and certificate
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_CERT_SHA256: ${{ secrets.CLIENT_SSH_RELEASE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          BADGING="$($AAPT dump badging "$APK" | head -n 1)"
+          PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+          VERSION_CODE="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionCode='\([^']*\)'.*/\1/p")"
+          VERSION_NAME="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionName='\([^']*\)'.*/\1/p")"
+          test "$PACKAGE" = "eu.blackserv.clientssh"
+          test "$VERSION_CODE" = "41"
+          test "$VERSION_NAME" = "0.3.6"
+          ACTUAL_CERT="$($APKSIGNER verify --verbose --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          EXPECTED_CERT="$(printf '%s' "$CLIENT_SSH_RELEASE_CERT_SHA256" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          test "$ACTUAL_CERT" = "$EXPECTED_CERT"
+          printf 'package=%s\nversionCode=%s\nversionName=%s\n' "$PACKAGE" "$VERSION_CODE" "$VERSION_NAME" > app/build/outputs/apk/release/APK_METADATA.txt
+          printf '%s\n' "$ACTUAL_CERT" > app/build/outputs/apk/release/CERTIFICATE_SHA256.txt
+          sha256sum "$APK" | tee app/build/outputs/apk/release/SHA256SUMS.txt
+          printf '%s\n' '7e76bcc2fc4d7ae5d8fae486c41b421253a7a33d' > app/build/outputs/apk/release/SOURCE_COMMIT.txt
+      - name: Upload private host key verification APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-ssh-0.3.6-host-key-verification-v41
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/APK_METADATA.txt
+            app/build/outputs/apk/release/CERTIFICATE_SHA256.txt
+            app/build/outputs/apk/release/SHA256SUMS.txt
+            app/build/outputs/apk/release/SOURCE_COMMIT.txt
+          if-no-files-found: error
+          retention-days: 1
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -f app/signing/client-ssh-release.jks
+          rm -f "${RUNNER_TEMP}/client-ssh-release-storepass"
