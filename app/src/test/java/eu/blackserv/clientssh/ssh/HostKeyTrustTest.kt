@@ -3,12 +3,21 @@ package eu.blackserv.clientssh.ssh
 import com.jcraft.jsch.HostKey
 import com.jcraft.jsch.HostKeyRepository
 import com.jcraft.jsch.UserInfo
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HostKeyTrustTest {
+    @After
+    fun cleanupBus() {
+        HostKeyTrustBus.cancelPending()
+    }
+
     @Test
     fun `parses algorithm from SSH key blob`() {
         val key = keyBlob("ssh-ed25519")
@@ -29,70 +38,127 @@ class HostKeyTrustTest {
     }
 
     @Test
-    fun `unknown trusted key is persisted and accepted`() {
+    fun `unknown key is rejected in first handshake then persisted after trust`() {
         val delegate = FakeRepository(initial = HostKeyRepository.NOT_INCLUDED)
-        val decider = RecordingDecider(trust = true)
+        val decider = RecordingDecider(publish = true)
         val repository = InteractiveHostKeyRepository(
             delegate = delegate,
             displayHost = "example.test",
             port = 2222,
             decider = decider,
-            timeoutMillis = 1_000,
         )
+        val key = keyBlob("ssh-ed25519")
 
-        assertEquals(HostKeyRepository.OK, repository.check("[example.test]:2222", keyBlob("ssh-ed25519")))
+        assertEquals(HostKeyRepository.NOT_INCLUDED, repository.check("[example.test]:2222", key))
+        assertFalse(delegate.addCalled)
+        val request = requireNotNull(decider.lastRequest)
+        assertEquals("example.test", request.host)
+        assertEquals(2222, request.port)
+        assertEquals("ssh-ed25519", request.algorithm)
+        assertEquals(HostKeyTrustKind.UNKNOWN, request.kind)
+
+        assertTrue(repository.persist(request.id))
         assertTrue(delegate.addCalled)
-        assertEquals("example.test", decider.lastRequest?.host)
-        assertEquals(2222, decider.lastRequest?.port)
-        assertEquals("ssh-ed25519", decider.lastRequest?.algorithm)
-        assertEquals(HostKeyTrustKind.UNKNOWN, decider.lastRequest?.kind)
+        assertEquals(HostKeyRepository.OK, repository.check("[example.test]:2222", key))
     }
 
     @Test
-    fun `unknown rejected key is not persisted`() {
+    fun `unknown rejected key is never persisted`() {
+        val delegate = FakeRepository(initial = HostKeyRepository.NOT_INCLUDED)
+        val decider = RecordingDecider(publish = true)
+        val repository = InteractiveHostKeyRepository(
+            delegate = delegate,
+            displayHost = "example.test",
+            port = 22,
+            decider = decider,
+        )
+
+        assertEquals(HostKeyRepository.NOT_INCLUDED, repository.check("example.test", keyBlob("ssh-rsa")))
+        repository.discard(requireNotNull(decider.lastRequest).id)
+        assertFalse(delegate.addCalled)
+        assertFalse(repository.persist(decider.lastRequest!!.id))
+    }
+
+    @Test
+    fun `unpublished concurrent unknown request is discarded`() {
         val delegate = FakeRepository(initial = HostKeyRepository.NOT_INCLUDED)
         val repository = InteractiveHostKeyRepository(
             delegate = delegate,
             displayHost = "example.test",
             port = 22,
-            decider = RecordingDecider(trust = false),
-            timeoutMillis = 1_000,
+            decider = RecordingDecider(publish = false),
         )
 
-        assertEquals(HostKeyRepository.NOT_INCLUDED, repository.check("example.test", keyBlob("ssh-rsa")))
-        assertFalse(delegate.addCalled)
+        assertEquals(HostKeyRepository.NOT_INCLUDED, repository.check("example.test", keyBlob("ssh-ed25519")))
+        assertFalse(repository.persist(1L))
     }
 
     @Test
     fun `changed key is reported but can never be accepted`() {
         val delegate = FakeRepository(initial = HostKeyRepository.CHANGED)
-        val decider = RecordingDecider(trust = true)
+        val decider = RecordingDecider(publish = true)
         val repository = InteractiveHostKeyRepository(
             delegate = delegate,
             displayHost = "example.test",
             port = 22,
             decider = decider,
-            timeoutMillis = 1_000,
         )
 
         assertEquals(HostKeyRepository.CHANGED, repository.check("example.test", keyBlob("ecdsa-sha2-nistp256")))
         assertFalse(delegate.addCalled)
         assertEquals(HostKeyTrustKind.CHANGED, decider.changedRequest?.kind)
+        assertFalse(repository.persist(decider.changedRequest!!.id))
     }
 
     @Test
     fun `already known key does not prompt`() {
-        val decider = RecordingDecider(trust = false)
+        val decider = RecordingDecider(publish = true)
         val repository = InteractiveHostKeyRepository(
             delegate = FakeRepository(initial = HostKeyRepository.OK),
             displayHost = "example.test",
             port = 22,
             decider = decider,
-            timeoutMillis = 1_000,
         )
 
         assertEquals(HostKeyRepository.OK, repository.check("example.test", keyBlob("ssh-ed25519")))
         assertEquals(null, decider.lastRequest)
+    }
+
+    @Test
+    fun `bus decision suspends outside handshake and completes on trust`() = runBlocking {
+        val request = HostKeyTrustBus.newRequest(
+            host = "example.test",
+            port = 22,
+            algorithm = "ssh-ed25519",
+            fingerprintSha256 = "SHA256:test",
+            kind = HostKeyTrustKind.UNKNOWN,
+        )
+        assertTrue(HostKeyTrustBus.publishUnknown(request))
+
+        val result = async { HostKeyTrustBus.awaitDecision(request.id, 2_000) }
+        delay(10)
+        HostKeyTrustBus.trust(request.id)
+
+        assertTrue(result.await())
+        assertEquals(null, HostKeyTrustBus.request.value)
+    }
+
+    @Test
+    fun `bus rejection completes decision as false`() = runBlocking {
+        val request = HostKeyTrustBus.newRequest(
+            host = "example.test",
+            port = 2222,
+            algorithm = "ssh-rsa",
+            fingerprintSha256 = "SHA256:test",
+            kind = HostKeyTrustKind.UNKNOWN,
+        )
+        assertTrue(HostKeyTrustBus.publishUnknown(request))
+
+        val result = async { HostKeyTrustBus.awaitDecision(request.id, 2_000) }
+        delay(10)
+        HostKeyTrustBus.reject(request.id)
+
+        assertFalse(result.await())
     }
 
     private fun keyBlob(algorithm: String): ByteArray {
@@ -105,13 +171,13 @@ class HostKeyTrustTest {
         ) + name + byteArrayOf(1, 2, 3, 4)
     }
 
-    private class RecordingDecider(private val trust: Boolean) : HostKeyTrustDecider {
+    private class RecordingDecider(private val publish: Boolean) : HostKeyTrustDecider {
         var lastRequest: HostKeyTrustRequest? = null
         var changedRequest: HostKeyTrustRequest? = null
 
-        override fun awaitTrust(request: HostKeyTrustRequest, timeoutMillis: Long): Boolean {
+        override fun publishUnknown(request: HostKeyTrustRequest): Boolean {
             lastRequest = request
-            return trust
+            return publish
         }
 
         override fun reportChanged(request: HostKeyTrustRequest) {
