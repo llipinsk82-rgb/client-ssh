@@ -13,4 +13,14 @@ class TerminalCompletionInputTest {
     fun `empty command sends only tab`() {
         assertEquals("\t", terminalCompletionInput(""))
     }
+
+    @Test
+    fun `typed interactive response is sent before enter`() {
+        assertEquals("y\r", terminalSubmitInput("y"))
+    }
+
+    @Test
+    fun `empty interactive response sends only enter`() {
+        assertEquals("\r", terminalSubmitInput(""))
+    }
 }
