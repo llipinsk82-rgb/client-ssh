@@ -189,14 +189,19 @@ class TerminalSessionService : Service() {
             jsch.setKnownHosts(knownHosts.absolutePath)
 
             if (profile.authenticationMethod == AuthenticationMethod.PRIVATE_KEY) {
-                val passphrase = profile.privateKeyPassphrase.takeIf(String::isNotEmpty)
+                if (profile.privateKey.isBlank()) {
+                    error("Klucz prywatny jest pusty. Edytuj profil i wklej poprawny klucz.")
+                }
+                val privateKeyBytes = profile.privateKey.toByteArray(StandardCharsets.UTF_8)
+                val passphraseBytes = profile.privateKeyPassphrase
+                    .takeIf(String::isNotEmpty)
                     ?.toByteArray(StandardCharsets.UTF_8)
-                jsch.addIdentity(
-                    profile.id,
-                    profile.privateKey.toByteArray(StandardCharsets.UTF_8),
-                    null,
-                    passphrase,
-                )
+                try {
+                    jsch.addIdentity(profile.id, privateKeyBytes, null, passphraseBytes)
+                } finally {
+                    privateKeyBytes.fill(0)
+                    passphraseBytes?.fill(0)
+                }
             }
 
             val session = jsch.getSession(username, host, profile.port).apply {
@@ -264,9 +269,9 @@ class TerminalSessionService : Service() {
         } catch (_: CancellationException) {
             throw CancellationException()
         } catch (error: Throwable) {
-            val readable = error.readableMessage(host)
+            val readable = error.toSafeSshMessage(host)
             val sessionWasPreviouslyConnected = connectedOnce || sessionPrefs.getBoolean(KEY_SESSION_WAS_CONNECTED, false)
-            if (maintainSession && sessionKeeperEnabled && sessionWasPreviouslyConnected && error.isRetryable()) {
+            if (maintainSession && sessionKeeperEnabled && sessionWasPreviouslyConnected && error.isRetryableSshError()) {
                 scheduleReconnect(profile, readable)
             } else {
                 failPermanently(profile, readable)
@@ -411,35 +416,6 @@ class TerminalSessionService : Service() {
             setShowBadge(false)
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-    }
-
-    private fun Throwable.isRetryable(): Boolean {
-        val raw = message.orEmpty().lowercase()
-        return listOf(
-            "auth fail",
-            "authentication",
-            "invalid privatekey",
-            "invalid private key",
-            "reject hostkey",
-            "host key has changed",
-            "host jest pusty",
-            "użytkownik ssh jest pusty",
-        ).none(raw::contains)
-    }
-
-    private fun Throwable.readableMessage(host: String): String {
-        val raw = message?.trim().orEmpty()
-        return when {
-            raw.contains("Auth fail", ignoreCase = true) -> "Nieprawidłowy login, hasło lub klucz SSH."
-            raw.contains("invalid privatekey", ignoreCase = true) || raw.contains("invalid private key", ignoreCase = true) ->
-                "Nieobsługiwany albo uszkodzony klucz prywatny."
-            raw.contains("reject HostKey", ignoreCase = true) -> "Klucz hosta SSH zmienił się. Połączenie zostało zablokowane."
-            raw.contains("UnknownHostException", ignoreCase = true) || raw.contains("Unable to resolve host", ignoreCase = true) ->
-                "Nie można znaleźć hosta: $host. Sprawdź internet, DNS albo literówkę w profilu."
-            raw.contains("timeout", ignoreCase = true) -> "Przekroczono czas oczekiwania na połączenie."
-            raw.isNotEmpty() -> raw
-            else -> javaClass.simpleName
-        }
     }
 
     companion object {
