@@ -7,11 +7,11 @@ import org.junit.Test
 class SshErrorPolicyTest {
     @Test
     fun `unknown transport error never exposes raw message`() {
-        val secret = "-----BEGIN PRIVATE KEY----- do-not-leak"
+        val secret = "sensitive-key-material-do-not-leak"
         val message = IllegalStateException(secret).toSafeSshMessage("example.test")
 
         assertFalse(message.contains(secret))
-        assertFalse(message.contains("PRIVATE KEY"))
+        assertFalse(message.contains("sensitive-key-material"))
         assertTrue(message.contains("SSH"))
     }
 
