@@ -91,7 +91,7 @@ object HostKeyTrustBus : HostKeyTrustDecider {
         synchronized(lock) {
             if (pending === item) {
                 pending = null
-                _request.value = null
+                if (_request.value?.id == item.request.id) _request.value = null
             }
         }
         return result
@@ -105,11 +105,21 @@ object HostKeyTrustBus : HostKeyTrustDecider {
         synchronized(lock) {
             if (changedAlertId == id) {
                 changedAlertId = null
-                _request.value = null
+                if (_request.value?.id == id) _request.value = null
                 return
             }
         }
         reject(id)
+    }
+
+    fun cancelUnknown() {
+        val item = synchronized(lock) {
+            val current = pending
+            pending = null
+            if (_request.value?.kind == HostKeyTrustKind.UNKNOWN) _request.value = null
+            current
+        }
+        item?.decision?.complete(false)
     }
 
     fun cancelPending() {
@@ -126,7 +136,7 @@ object HostKeyTrustBus : HostKeyTrustDecider {
     private fun completeUnknown(id: Long, trusted: Boolean) {
         val item = synchronized(lock) {
             pending?.takeIf { it.request.id == id }?.also {
-                _request.value = null
+                if (_request.value?.id == id) _request.value = null
             }
         } ?: return
         item.decision.complete(trusted)
