@@ -34,10 +34,22 @@ class SshErrorPolicyTest {
     }
 
     @Test
-    fun `host key change is terminal`() {
-        val error = IllegalStateException("Host key has changed")
+    fun `host key change is terminal and reported as change`() {
+        val error = IllegalStateException("HostKey has been changed")
+        val message = error.toSafeSshMessage("example.test")
 
         assertFalse(error.isRetryableSshError())
-        assertTrue(error.toSafeSshMessage("example.test").contains("zablokowane"))
+        assertTrue(message.contains("zmienił się"))
+        assertTrue(message.contains("zablokowane"))
+    }
+
+    @Test
+    fun `rejected unknown host key is terminal but not reported as changed`() {
+        val error = IllegalStateException("reject HostKey: example.test")
+        val message = error.toSafeSshMessage("example.test")
+
+        assertFalse(error.isRetryableSshError())
+        assertTrue(message.contains("nie został zaakceptowany"))
+        assertFalse(message.contains("zmienił się"))
     }
 }
