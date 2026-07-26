@@ -18,7 +18,8 @@ Skrypt:
   - nigdy nie kopiuje JKS do repozytorium,
   - nie przekazuje haseł w argv ani zmiennych środowiskowych,
   - używa plików haseł 600 i usuwa je przez trap,
-  - wymaga czystego drzewa Git,
+  - pobiera hasła dopiero po zielonych testach i zbudowaniu unsigned APK,
+  - wymaga czystego drzewa Git i wyższego versionCode niż stara instalacja,
   - zapisuje commit źródłowy, fingerprint i SHA-256 artefaktu,
   - nie wysyła APK ani klucza do GitHub Actions lub GitHub Releases.
 
@@ -27,7 +28,7 @@ Opcje:
   --alias NAME          Alias starego klucza.
   --reference-apk PATH  APK pobrany z aktualnie zainstalowanej starej aplikacji.
   --adb-reference       Pobierz bazowy APK z podłączonego urządzenia przez adb.
-  --output DIR          Katalog wyjściowy poza repo; domyślnie
+  --output DIR          Prywatny katalog bazowy poza repo; domyślnie
                         ~/.client-ssh/migration-build.
   -h, --help            Pokaż pomoc.
 EOF
@@ -82,7 +83,7 @@ keystore=""
 alias_name=""
 reference_apk=""
 adb_reference=false
-output_dir="${HOME}/.client-ssh/migration-build"
+output_base="${HOME}/.client-ssh/migration-build"
 store_password_file=""
 key_password_file=""
 tmp_dir=""
@@ -117,7 +118,7 @@ while [[ $# -gt 0 ]]; do
     --alias) alias_name="${2:?brak wartości dla --alias}"; shift 2 ;;
     --reference-apk) reference_apk="${2:?brak wartości dla --reference-apk}"; shift 2 ;;
     --adb-reference) adb_reference=true; shift ;;
-    --output) output_dir="${2:?brak wartości dla --output}"; shift 2 ;;
+    --output) output_base="${2:?brak wartości dla --output}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) fail "Nieznana opcja: $1" ;;
   esac
@@ -145,6 +146,8 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || fail "Uruchom skrypt
 cd "$repo_root"
 [[ -z "$(git status --porcelain --untracked-files=all)" ]] || fail "Drzewo Git nie jest czyste."
 [[ ! -e app/signing/client-ssh-release.jks ]] || fail "Usuń lokalny JKS release z drzewa roboczego przed buildem migracyjnym."
+[[ -f app/src/main/java/eu/blackserv/clientssh/backup/ProfileBackupActivity.kt ]] || fail "Źródło nie zawiera ekranu bezpiecznego backupu."
+[[ -f app/src/main/java/eu/blackserv/clientssh/backup/ProfileBackupCodec.kt ]] || fail "Źródło nie zawiera szyfrowanego formatu backupu."
 bash scripts/check-no-release-secrets.sh >/dev/null
 
 keystore="$(realpath "$keystore")"
@@ -158,13 +161,11 @@ keystore_mode="$(stat -c '%a' "$keystore")"
 keystore_mode_value=$((8#$keystore_mode))
 (( (keystore_mode_value & 077) == 0 )) || fail "Uprawnienia JKS są zbyt szerokie ($keystore_mode). Ustaw chmod 600."
 
-output_dir="$(realpath -m "$output_dir")"
-case "$output_dir" in
+output_base="$(realpath -m "$output_base")"
+case "$output_base" in
   "$repo_real"|"$repo_real"/*) fail "Katalog wyjściowy musi znajdować się poza repozytorium." ;;
 esac
 umask 077
-mkdir -p "$output_dir"
-chmod 700 "$output_dir"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/client-ssh-migration.XXXXXX")"
 chmod 700 "$tmp_dir"
 
@@ -188,10 +189,43 @@ fi
 
 reference_badging="$($aapt dump badging "$reference_apk" | head -n 1)"
 reference_package="$(printf '%s\n' "$reference_badging" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+reference_version_code="$(printf '%s\n' "$reference_badging" | sed -n "s/.* versionCode='\([^']*\)'.*/\1/p")"
 [[ "$reference_package" == "eu.blackserv.clientssh" ]] || fail "Referencyjny APK ma inny package: $reference_package"
+[[ "$reference_version_code" =~ ^[0-9]+$ ]] || fail "Nie udało się odczytać versionCode starej aplikacji."
 reference_fingerprint="$(apk_fingerprint "$reference_apk")"
 [[ "$reference_fingerprint" =~ ^[0-9a-f]{64}$ ]] || fail "Nie udało się odczytać certyfikatu referencyjnego APK."
 
+commit_sha="$(git rev-parse HEAD)"
+short_sha="${commit_sha:0:12}"
+version_name="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
+version_code="$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)"
+[[ -n "$version_name" && "$version_code" =~ ^[0-9]+$ ]] || fail "Nie udało się odczytać wersji aplikacji."
+(( 10#$version_code > 10#$reference_version_code )) || fail "Build migracyjny musi mieć versionCode wyższy niż zainstalowana aplikacja ($reference_version_code)."
+
+output_dir="$output_base/${version_name}-${short_sha}"
+[[ ! -e "$output_dir" ]] || fail "Katalog wyniku już istnieje: $output_dir"
+mkdir -p "$output_dir"
+chmod 700 "$output_dir"
+
+# Celowo odcinamy wszystkie zmienne nowego podpisu. Gradle ma testować i budować APK unsigned.
+env \
+  -u CLIENT_SSH_RELEASE_KEYSTORE_B64 \
+  -u CLIENT_SSH_RELEASE_STORE_PASSWORD \
+  -u CLIENT_SSH_RELEASE_KEY_ALIAS \
+  -u CLIENT_SSH_RELEASE_KEY_PASSWORD \
+  -u CLIENT_SSH_RELEASE_CERT_SHA256 \
+  gradle :app:clean :app:testDebugUnitTest :app:assembleRelease --stacktrace --console=plain
+
+mapfile -t unsigned_candidates < <(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*unsigned*.apk' -print)
+((${#unsigned_candidates[@]} == 1)) || fail "Oczekiwano dokładnie jednego unsigned APK; znaleziono ${#unsigned_candidates[@]}."
+unsigned_apk="${unsigned_candidates[0]}"
+aligned_apk="$tmp_dir/client-ssh-migration-aligned.apk"
+signed_apk="$tmp_dir/client-ssh-migration-signed.apk"
+
+"$zipalign" -P 16 -f 4 "$unsigned_apk" "$aligned_apk"
+"$zipalign" -c -P 16 4 "$aligned_apk" >/dev/null
+
+# Hasła istnieją w pamięci/pliku tylko przez etap walidacji JKS i podpisania.
 read -r -s -p "Hasło starego magazynu JKS: " store_password
 echo
 read -r -s -p "Powtórz hasło magazynu: " store_password_repeat
@@ -217,28 +251,6 @@ jks_fingerprint="$(keystore_fingerprint)"
 [[ "$jks_fingerprint" =~ ^[0-9a-f]{64}$ ]] || fail "Nie udało się odczytać certyfikatu starego JKS."
 [[ "$jks_fingerprint" == "$reference_fingerprint" ]] || fail "Stary JKS nie odpowiada certyfikatowi zainstalowanej aplikacji."
 
-commit_sha="$(git rev-parse HEAD)"
-short_sha="${commit_sha:0:12}"
-version_name="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
-version_code="$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)"
-[[ -n "$version_name" && -n "$version_code" ]] || fail "Nie udało się odczytać wersji aplikacji."
-
-# Celowo odcinamy wszystkie zmienne nowego podpisu. Gradle ma zbudować APK unsigned.
-env \
-  -u CLIENT_SSH_RELEASE_STORE_PASSWORD \
-  -u CLIENT_SSH_RELEASE_KEY_ALIAS \
-  -u CLIENT_SSH_RELEASE_KEY_PASSWORD \
-  gradle :app:clean :app:assembleRelease --stacktrace --console=plain
-
-mapfile -t unsigned_candidates < <(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*unsigned*.apk' -print)
-((${#unsigned_candidates[@]} == 1)) || fail "Oczekiwano dokładnie jednego unsigned APK; znaleziono ${#unsigned_candidates[@]}."
-unsigned_apk="${unsigned_candidates[0]}"
-aligned_apk="$tmp_dir/client-ssh-migration-aligned.apk"
-signed_apk="$tmp_dir/client-ssh-migration-signed.apk"
-
-"$zipalign" -P 16 -f 4 "$unsigned_apk" "$aligned_apk"
-"$zipalign" -c -P 16 4 "$aligned_apk" >/dev/null
-
 "$apksigner" sign \
   --ks "$keystore" \
   --ks-key-alias "$alias_name" \
@@ -261,7 +273,6 @@ signed_version_name="$(printf '%s\n' "$signed_badging" | sed -n "s/.* versionNam
 
 artifact_name="client-ssh-${version_name}-migration-old-cert-${short_sha}.apk"
 artifact_path="$output_dir/$artifact_name"
-[[ ! -e "$artifact_path" ]] || fail "Artefakt już istnieje: $artifact_path"
 install -m 600 "$signed_apk" "$artifact_path"
 (
   cd "$output_dir"
@@ -274,6 +285,7 @@ Client SSH migration build
 
 Package: eu.blackserv.clientssh
 Version: $version_name ($version_code)
+Replaced versionCode: $reference_version_code
 Source commit: $commit_sha
 
 Ten APK jest podpisany starym, skompromitowanym certyfikatem wyłącznie po to,
@@ -282,7 +294,12 @@ profili. Nie publikuj go jako release i nie udostępniaj publicznie.
 
 Po utworzeniu i sprawdzeniu backupu przejdź do APK podpisanego nowym certyfikatem.
 EOF_NOTICE
-chmod 600 "$output_dir"/*
+chmod 600 \
+  "$artifact_path" \
+  "$output_dir/SHA256SUMS.txt" \
+  "$output_dir/CERTIFICATE_SHA256.txt" \
+  "$output_dir/SOURCE_COMMIT.txt" \
+  "$output_dir/README-MIGRATION.txt"
 
 printf '\nGOTOWE: %s\n' "$artifact_path"
 printf 'Commit:  %s\n' "$commit_sha"
