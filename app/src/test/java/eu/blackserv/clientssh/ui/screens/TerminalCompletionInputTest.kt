@@ -15,12 +15,17 @@ class TerminalCompletionInputTest {
     }
 
     @Test
-    fun `typed interactive response is sent before enter`() {
-        assertEquals("y\r", terminalSubmitInput("y"))
+    fun `interactive answer is terminated with line feed`() {
+        assertEquals("y\n", terminalSubmitInput("y"))
     }
 
     @Test
-    fun `empty interactive response sends only enter`() {
-        assertEquals("\r", terminalSubmitInput(""))
+    fun `regular command uses the same line feed submit path`() {
+        assertEquals("gh auth status\n", terminalSubmitInput("gh auth status"))
+    }
+
+    @Test
+    fun `empty enter sends only line feed`() {
+        assertEquals("\n", terminalSubmitInput(""))
     }
 }
