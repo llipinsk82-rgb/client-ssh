@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.dp
 import eu.blackserv.clientssh.ssh.HostKeyTrustKind
 import eu.blackserv.clientssh.ssh.HostKeyTrustRequest
 
+internal fun canAcceptHostKey(kind: HostKeyTrustKind): Boolean = kind == HostKeyTrustKind.UNKNOWN
+
 @Composable
 fun HostKeyTrustDialog(
     request: HostKeyTrustRequest,
@@ -22,7 +24,7 @@ fun HostKeyTrustDialog(
     onReject: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
-    val changed = request.kind == HostKeyTrustKind.CHANGED
+    val changed = !canAcceptHostKey(request.kind)
 
     AlertDialog(
         onDismissRequest = onReject,
