@@ -95,7 +95,7 @@ class HealthCheckWorker(
             val decision = healthWorkerFailureDecision(runAttemptCount)
             finish(
                 outcome = decision.outcome,
-                detail = error.message.orEmpty().ifBlank { error::class.simpleName.orEmpty() },
+                detail = healthWorkerSafeFailureDetail(error),
                 result = if (decision.shouldRetry) Result.retry() else Result.failure(),
             )
         }
@@ -119,4 +119,9 @@ internal fun healthWorkerFailureDecision(runAttemptCount: Int): HealthWorkerFail
         shouldRetry = shouldRetry,
         outcome = if (shouldRetry) HealthCheckRunOutcome.RETRY else HealthCheckRunOutcome.FAILED,
     )
+}
+
+internal fun healthWorkerSafeFailureDetail(error: Throwable): String {
+    val type = error::class.simpleName?.takeIf(String::isNotBlank) ?: "WorkerFailure"
+    return "Błąd infrastruktury: $type"
 }
