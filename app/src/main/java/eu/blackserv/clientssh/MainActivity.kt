@@ -48,12 +48,14 @@ import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.service.TerminalSessionService
+import eu.blackserv.clientssh.ssh.HostKeyTrustBus
 import eu.blackserv.clientssh.storage.LocalAppStore
 import eu.blackserv.clientssh.terminal.PendingSessionRegistry
 import eu.blackserv.clientssh.terminal.TerminalConnectionState
 import eu.blackserv.clientssh.terminal.TerminalSessionBus
 import eu.blackserv.clientssh.ui.screens.HealthMonitorScreen
 import eu.blackserv.clientssh.ui.screens.HistoryScreen
+import eu.blackserv.clientssh.ui.screens.HostKeyTrustDialog
 import eu.blackserv.clientssh.ui.screens.ProfileEditorDialog
 import eu.blackserv.clientssh.ui.screens.ProfilesScreen
 import eu.blackserv.clientssh.ui.screens.SettingsScreen
@@ -223,6 +225,7 @@ private fun ClientSshApp(
     }
     val healthScheduler = remember(appContext) { HealthMonitorScheduler(appContext) }
     val session by TerminalSessionBus.snapshot.collectAsState()
+    val hostKeyTrustRequest by HostKeyTrustBus.request.collectAsState()
     var terminalSettings by remember(appStore) {
         mutableStateOf(appStore.loadTerminalSettings())
     }
@@ -384,6 +387,14 @@ private fun ClientSshApp(
 
     if (showUpdater) {
         UpdateDialog(context = context, onDismiss = { showUpdater = false })
+    }
+
+    hostKeyTrustRequest?.let { request ->
+        HostKeyTrustDialog(
+            request = request,
+            onTrust = { HostKeyTrustBus.trust(request.id) },
+            onReject = { HostKeyTrustBus.dismiss(request.id) },
+        )
     }
 }
 
