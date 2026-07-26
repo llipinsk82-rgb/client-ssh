@@ -148,6 +148,7 @@ value class TelemetryPingTarget private constructor(val value: String) {
             val value = raw.trim()
             if (value.length !in 1..253) return null
             if (value.toIpv4OctetsOrNull() != null) return TelemetryPingTarget(value)
+            if (value.all { it.isDigit() || it == '.' }) return null
             val labels = value.split('.')
             if (labels.any { label -> !label.isValidDnsLabel() }) return null
             return TelemetryPingTarget(value.lowercase())
@@ -167,9 +168,12 @@ private fun String.toIpv4OctetsOrNull(): List<Int>? {
 
 private fun String.isValidDnsLabel(): Boolean {
     if (length !in 1..63) return false
-    if (!first().isLetterOrDigit() || !last().isLetterOrDigit()) return false
-    return all { it.isLetterOrDigit() || it == '-' }
+    if (!first().isAsciiLetterOrDigit() || !last().isAsciiLetterOrDigit()) return false
+    return all { it.isAsciiLetterOrDigit() || it == '-' }
 }
+
+private fun Char.isAsciiLetterOrDigit(): Boolean =
+    this in 'a'..'z' || this in 'A'..'Z' || this in '0'..'9'
 
 internal fun buildSshTelemetryCommand(pingTarget: TelemetryPingTarget?): String {
     val dollar = '$'
