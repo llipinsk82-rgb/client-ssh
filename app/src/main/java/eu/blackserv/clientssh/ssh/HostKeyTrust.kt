@@ -141,32 +141,18 @@ class InteractiveHostKeyRepository(
         val existing = delegate.check(repositoryHost, key)
         if (existing == HostKeyRepository.OK) return existing
 
-        val request = HostKeyTrustRequest(
-            id = if (decider === HostKeyTrustBus) {
-                HostKeyTrustBus.newRequest(
-                    host = displayHost,
-                    port = port,
-                    algorithm = sshHostKeyAlgorithm(key),
-                    fingerprintSha256 = sshHostKeyFingerprintSha256(key),
-                    kind = if (existing == HostKeyRepository.CHANGED) {
-                        HostKeyTrustKind.CHANGED
-                    } else {
-                        HostKeyTrustKind.UNKNOWN
-                    },
-                ).id
-            } else {
-                1L
-            },
-            host = displayHost,
-            port = port,
-            algorithm = sshHostKeyAlgorithm(key),
-            fingerprintSha256 = sshHostKeyFingerprintSha256(key),
-            kind = if (existing == HostKeyRepository.CHANGED) {
-                HostKeyTrustKind.CHANGED
-            } else {
-                HostKeyTrustKind.UNKNOWN
-            },
-        )
+        val kind = if (existing == HostKeyRepository.CHANGED) {
+            HostKeyTrustKind.CHANGED
+        } else {
+            HostKeyTrustKind.UNKNOWN
+        }
+        val algorithm = sshHostKeyAlgorithm(key)
+        val fingerprint = sshHostKeyFingerprintSha256(key)
+        val request = if (decider === HostKeyTrustBus) {
+            HostKeyTrustBus.newRequest(displayHost, port, algorithm, fingerprint, kind)
+        } else {
+            HostKeyTrustRequest(1L, displayHost, port, algorithm, fingerprint, kind)
+        }
 
         if (existing == HostKeyRepository.CHANGED) {
             decider.reportChanged(request)
@@ -175,13 +161,8 @@ class InteractiveHostKeyRepository(
 
         if (!decider.awaitTrust(request, timeoutMillis)) return HostKeyRepository.NOT_INCLUDED
 
-        val persistedKey = key.copyOf()
-        return try {
-            delegate.add(HostKey(repositoryHost, persistedKey), null)
-            delegate.check(repositoryHost, key)
-        } finally {
-            persistedKey.fill(0)
-        }
+        delegate.add(HostKey(repositoryHost, key.copyOf()), null)
+        return delegate.check(repositoryHost, key)
     }
 
     override fun add(hostkey: HostKey, userinfo: UserInfo?) = delegate.add(hostkey, userinfo)
