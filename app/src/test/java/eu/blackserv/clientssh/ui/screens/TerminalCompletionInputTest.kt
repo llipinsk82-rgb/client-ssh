@@ -1,5 +1,8 @@
 package eu.blackserv.clientssh.ui.screens
 
+import eu.blackserv.clientssh.terminal.TerminalSessionBus
+import java.nio.charset.StandardCharsets
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -27,5 +30,17 @@ class TerminalCompletionInputTest {
     @Test
     fun `empty enter sends only line feed`() {
         assertEquals("\n", terminalSubmitInput(""))
+    }
+
+    @Test
+    fun `terminal bus forwards interactive answer with line feed bytes`() {
+        var forwarded: ByteArray? = null
+        TerminalSessionBus.attachWriter { bytes -> forwarded = bytes.copyOf() }
+        try {
+            TerminalSessionBus.send(terminalSubmitInput("y"))
+            assertArrayEquals("y\n".toByteArray(StandardCharsets.UTF_8), forwarded)
+        } finally {
+            TerminalSessionBus.detachWriter()
+        }
     }
 }
