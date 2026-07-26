@@ -100,7 +100,9 @@ cleanup() {
   [[ -n "$key_password_file" ]] && rm -f -- "$key_password_file"
   [[ -n "$tmp_dir" ]] && rm -rf -- "$tmp_dir"
 }
-trap cleanup EXIT INT TERM HUP
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -123,7 +125,7 @@ if [[ "$adb_reference" == false && -z "$reference_apk" ]]; then
   fail "Podaj --reference-apk albo --adb-reference."
 fi
 
-for command in git gradle keytool sha256sum mktemp stat realpath sed grep find sort; do
+for command in bash env git gradle keytool sha256sum mktemp stat realpath sed grep find sort tr head install; do
   require_command "$command"
 done
 [[ "$adb_reference" == false ]] || require_command adb
@@ -227,8 +229,8 @@ unsigned_apk="${unsigned_candidates[0]}"
 aligned_apk="$tmp_dir/client-ssh-migration-aligned.apk"
 signed_apk="$tmp_dir/client-ssh-migration-signed.apk"
 
-"$zipalign" -f -p 4 "$unsigned_apk" "$aligned_apk"
-"$zipalign" -c -p 4 "$aligned_apk" >/dev/null
+"$zipalign" -P 16 -f 4 "$unsigned_apk" "$aligned_apk"
+"$zipalign" -c -P 16 4 "$aligned_apk" >/dev/null
 
 "$apksigner" sign \
   --ks "$keystore" \
@@ -252,6 +254,7 @@ signed_version_name="$(printf '%s\n' "$signed_badging" | sed -n "s/.* versionNam
 
 artifact_name="client-ssh-${version_name}-migration-old-cert-${short_sha}.apk"
 artifact_path="$output_dir/$artifact_name"
+[[ ! -e "$artifact_path" ]] || fail "Artefakt już istnieje: $artifact_path"
 install -m 600 "$signed_apk" "$artifact_path"
 (
   cd "$output_dir"
