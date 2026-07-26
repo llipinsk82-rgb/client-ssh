@@ -33,7 +33,7 @@ data class SshTelemetryExecResult(
 
 class SshTelemetryTransportException(
     val kind: SshTelemetryFailureKind,
-    message: String,
+    message: String? = null,
 ) : Exception(message)
 
 fun interface SshTelemetryTransport {
@@ -75,7 +75,7 @@ class SshTelemetryCollector(
             if (result.exitStatus != 0) {
                 failure(
                     SshTelemetryFailureKind.COMMAND_FAILED,
-                    "Serwer nie wykonał poleceń telemetrycznych.",
+                    safeFailureMessage(SshTelemetryFailureKind.COMMAND_FAILED),
                 )
             } else {
                 runCatching { SshTelemetryParser.parse(result.stdout) }
@@ -84,13 +84,13 @@ class SshTelemetryCollector(
                         onFailure = {
                             failure(
                                 SshTelemetryFailureKind.RESPONSE_INVALID,
-                                "Serwer zwrócił nieprawidłowe dane telemetryczne.",
+                                safeFailureMessage(SshTelemetryFailureKind.RESPONSE_INVALID),
                             )
                         },
                     )
             }
         } catch (error: SshTelemetryTransportException) {
-            failure(error.kind, error.message.orEmpty().ifBlank { safeFailureMessage(error.kind) })
+            failure(error.kind, safeFailureMessage(error.kind))
         } catch (_: Throwable) {
             failure(
                 SshTelemetryFailureKind.INTERNAL_ERROR,
