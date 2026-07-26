@@ -70,8 +70,7 @@ jobs:
           test "${#candidates[@]}" -eq 1
           apk="${candidates[0]}"
 
-          badging="$ANDROID_HOME/build-tools/36.0.0/aapt dump badging "$apk" | head -n 1"
-          badging="$($ANDROID_HOME/build-tools/36.0.0/aapt dump badging "$apk" | head -n 1)"
+          badging="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | head -n 1)"
           package_name="$(printf '%s\n' "$badging" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
           test "$package_name" = 'eu.blackserv.clientssh'
 
