@@ -6,11 +6,13 @@ on:
       - '.github/workflows/migration-helper.yml'
       - 'app/build.gradle.kts'
       - 'app/src/main/AndroidManifest.xml'
+      - 'app/src/main/java/eu/blackserv/clientssh/ClientSshApplication.kt'
       - 'app/src/main/java/eu/blackserv/clientssh/backup/**'
       - 'app/src/main/java/eu/blackserv/clientssh/ui/screens/SettingsScreen.kt'
       - 'app/src/test/java/eu/blackserv/clientssh/backup/**'
       - 'scripts/build-old-cert-migration-apk.sh'
       - 'scripts/check-no-release-secrets.sh'
+      - 'docs/OLD_CERT_MIGRATION_BUILD.md'
       - 'docs/SECURE_PROFILE_BACKUP.md'
 
 permissions:
@@ -61,9 +63,11 @@ jobs:
         run: |
           set -euo pipefail
           env \
+            -u CLIENT_SSH_RELEASE_KEYSTORE_B64 \
             -u CLIENT_SSH_RELEASE_STORE_PASSWORD \
             -u CLIENT_SSH_RELEASE_KEY_ALIAS \
             -u CLIENT_SSH_RELEASE_KEY_PASSWORD \
+            -u CLIENT_SSH_RELEASE_CERT_SHA256 \
             gradle :app:assembleRelease --stacktrace --console=plain
 
           mapfile -t candidates < <(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*unsigned*.apk' -print)
