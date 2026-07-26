@@ -24,10 +24,10 @@ object ProfileBackupCodec {
 
     private const val CONTAINER_VERSION = 1
     private const val PAYLOAD_VERSION = 1
-    private const val KDF_PBKDF2_HMAC_SHA256 = 1
+    private const val KDF_ID = 1
     private const val KDF_ITERATIONS = 600_000
-    private const val MIN_ACCEPTED_ITERATIONS = 100_000
-    private const val MAX_ACCEPTED_ITERATIONS = 2_000_000
+    private const val MIN_KDF_ITERATIONS = 100_000
+    private const val MAX_KDF_ITERATIONS = 2_000_000
     private const val SALT_BYTES = 16
     private const val NONCE_BYTES = 12
     private const val KEY_BITS = 256
@@ -36,6 +36,7 @@ object ProfileBackupCodec {
 
     const val MIN_PASSWORD_CHARS = 16
     const val MAX_CONTAINER_BYTES = 8 * 1024 * 1024
+
     private const val MAX_PROFILES = 500
     private const val MAX_ID_BYTES = 128
     private const val MAX_NAME_BYTES = 512
@@ -55,17 +56,12 @@ object ProfileBackupCodec {
         validateProfiles(profiles)
 
         val plaintext = encodePayload(profiles)
-        val salt = ByteArray(SALT_BYTES).also(secureRandom::nextBytes)
-        val nonce = ByteArray(NONCE_BYTES).also(secureRandom::nextBytes)
-        val expectedCiphertextLength = plaintext.size + GCM_TAG_BYTES
-        val header = encodeHeader(
-            iterations = KDF_ITERATIONS,
-            salt = salt,
-            nonce = nonce,
-            ciphertextLength = expectedCiphertextLength,
-        )
-
+        val salt = ByteArray(SALT_BYTES).also { secureRandom.nextBytes(it) }
+        val nonce = ByteArray(NONCE_BYTES).also { secureRandom.nextBytes(it) }
+        val ciphertextLength = plaintext.size + GCM_TAG_BYTES
+        val header = encodeHeader(salt, nonce, ciphertextLength)
         val keyBytes = deriveKey(password, salt, KDF_ITERATIONS)
+
         try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(
@@ -75,22 +71,31 @@ object ProfileBackupCodec {
             )
             cipher.updateAAD(header)
             val ciphertext = cipher.doFinal(plaintext)
-            check(ciphertext.size == expectedCiphertextLength)
-
-            val output = ByteArrayOutputStream(header.size + ciphertext.size)
-            output.write(header)
-            output.write(ciphertext)
-            return output.toByteArray().also {
-                if (it.size > MAX_CONTAINER_BYTES) {
-                    it.fill(0)
-                    throw ProfileBackupException("Backup przekracza dozwolony rozmiar.")
-                }
+            if (ciphertext.size != ciphertextLength) {
+                ciphertext.fill(0)
+                throw ProfileBackupException("Nie udało się utworzyć kompletnego backupu.")
             }
+            val result = ByteArrayOutputStream(header.size + ciphertext.size).use { output ->
+                output.write(header)
+                output.write(ciphertext)
+                output.toByteArray()
+            }
+            ciphertext.fill(0)
+            if (result.size > MAX_CONTAINER_BYTES) {
+                result.fill(0)
+                throw ProfileBackupException("Backup przekracza dozwolony rozmiar.")
+            }
+            return result
+        } catch (error: ProfileBackupException) {
+            throw error
+        } catch (_: Throwable) {
+            throw ProfileBackupException("Nie udało się zaszyfrować backupu.")
         } finally {
             plaintext.fill(0)
             keyBytes.fill(0)
             salt.fill(0)
             nonce.fill(0)
+            header.fill(0)
         }
     }
 
@@ -113,15 +118,11 @@ object ProfileBackupCodec {
             cipher.doFinal(container, parsed.ciphertextOffset, parsed.ciphertextLength)
         } catch (_: AEADBadTagException) {
             throw ProfileBackupException("Nieprawidłowe hasło albo uszkodzony backup.")
-        } catch (_: ProfileBackupException) {
-            throw
         } catch (_: Throwable) {
             throw ProfileBackupException("Nie udało się odszyfrować backupu.")
         } finally {
             keyBytes.fill(0)
-            parsed.salt.fill(0)
-            parsed.nonce.fill(0)
-            parsed.header.fill(0)
+            parsed.clear()
         }
 
         return try {
@@ -131,26 +132,21 @@ object ProfileBackupCodec {
         }
     }
 
-    private fun encodeHeader(
-        iterations: Int,
-        salt: ByteArray,
-        nonce: ByteArray,
-        ciphertextLength: Int,
-    ): ByteArray {
-        val output = ByteArrayOutputStream()
-        DataOutputStream(output).use { data ->
-            data.write(containerMagic)
-            data.writeInt(CONTAINER_VERSION)
-            data.writeByte(KDF_PBKDF2_HMAC_SHA256)
-            data.writeInt(iterations)
-            data.writeByte(salt.size)
-            data.write(salt)
-            data.writeByte(nonce.size)
-            data.write(nonce)
-            data.writeInt(ciphertextLength)
+    private fun encodeHeader(salt: ByteArray, nonce: ByteArray, ciphertextLength: Int): ByteArray =
+        ByteArrayOutputStream().use { output ->
+            DataOutputStream(output).use { data ->
+                data.write(containerMagic)
+                data.writeInt(CONTAINER_VERSION)
+                data.writeByte(KDF_ID)
+                data.writeInt(KDF_ITERATIONS)
+                data.writeByte(salt.size)
+                data.write(salt)
+                data.writeByte(nonce.size)
+                data.write(nonce)
+                data.writeInt(ciphertextLength)
+            }
+            output.toByteArray()
         }
-        return output.toByteArray()
-    }
 
     private data class ParsedHeader(
         val iterations: Int,
@@ -159,40 +155,40 @@ object ProfileBackupCodec {
         val ciphertextOffset: Int,
         val ciphertextLength: Int,
         val header: ByteArray,
-    )
+    ) {
+        fun clear() {
+            salt.fill(0)
+            nonce.fill(0)
+            header.fill(0)
+        }
+    }
 
     private fun parseHeader(container: ByteArray): ParsedHeader {
         try {
             val input = ByteArrayInputStream(container)
             val data = DataInputStream(input)
-            val magic = ByteArray(containerMagic.size).also(data::readFully)
-            if (!magic.contentEquals(containerMagic)) {
-                throw ProfileBackupException("To nie jest backup Client SSH.")
-            }
-            val version = data.readInt()
-            if (version != CONTAINER_VERSION) {
-                throw ProfileBackupException("Nieobsługiwana wersja backupu.")
-            }
-            if (data.readUnsignedByte() != KDF_PBKDF2_HMAC_SHA256) {
-                throw ProfileBackupException("Nieobsługiwany algorytm backupu.")
-            }
+            val magic = ByteArray(containerMagic.size).also { data.readFully(it) }
+            if (!magic.contentEquals(containerMagic)) fail("To nie jest backup Client SSH.")
+            if (data.readInt() != CONTAINER_VERSION) fail("Nieobsługiwana wersja backupu.")
+            if (data.readUnsignedByte() != KDF_ID) fail("Nieobsługiwany algorytm backupu.")
+
             val iterations = data.readInt()
-            if (iterations !in MIN_ACCEPTED_ITERATIONS..MAX_ACCEPTED_ITERATIONS) {
-                throw ProfileBackupException("Nieprawidłowe parametry KDF.")
+            if (iterations !in MIN_KDF_ITERATIONS..MAX_KDF_ITERATIONS) {
+                fail("Nieprawidłowe parametry KDF.")
             }
             val saltLength = data.readUnsignedByte()
-            if (saltLength != SALT_BYTES) throw ProfileBackupException("Nieprawidłowa sól backupu.")
-            val salt = ByteArray(saltLength).also(data::readFully)
+            if (saltLength != SALT_BYTES) fail("Nieprawidłowa sól backupu.")
+            val salt = ByteArray(saltLength).also { data.readFully(it) }
             val nonceLength = data.readUnsignedByte()
-            if (nonceLength != NONCE_BYTES) throw ProfileBackupException("Nieprawidłowy nonce backupu.")
-            val nonce = ByteArray(nonceLength).also(data::readFully)
+            if (nonceLength != NONCE_BYTES) fail("Nieprawidłowy nonce backupu.")
+            val nonce = ByteArray(nonceLength).also { data.readFully(it) }
             val ciphertextLength = data.readInt()
-            if (ciphertextLength < GCM_TAG_BYTES || ciphertextLength > MAX_CONTAINER_BYTES) {
-                throw ProfileBackupException("Nieprawidłowa długość zaszyfrowanych danych.")
+            if (ciphertextLength !in GCM_TAG_BYTES..MAX_CONTAINER_BYTES) {
+                fail("Nieprawidłowa długość zaszyfrowanych danych.")
             }
             val ciphertextOffset = container.size - input.available()
             if (input.available() != ciphertextLength) {
-                throw ProfileBackupException("Backup jest obcięty albo zawiera nadmiarowe dane.")
+                fail("Backup jest obcięty albo zawiera nadmiarowe dane.")
             }
             return ParsedHeader(
                 iterations = iterations,
@@ -222,71 +218,54 @@ object ProfileBackupCodec {
         }
     }
 
-    private fun encodePayload(profiles: List<HostProfile>): ByteArray {
-        val output = ByteArrayOutputStream()
-        DataOutputStream(output).use { data ->
-            data.write(payloadMagic)
-            data.writeInt(PAYLOAD_VERSION)
-            data.writeInt(profiles.size)
-            profiles.forEach { profile ->
-                data.writeString(profile.id, MAX_ID_BYTES)
-                data.writeString(profile.name, MAX_NAME_BYTES)
-                data.writeString(profile.host, MAX_HOST_BYTES)
-                data.writeInt(profile.port)
-                data.writeString(profile.username, MAX_USERNAME_BYTES)
-                data.writeString(profile.protocol.name, MAX_ENUM_BYTES)
-                data.writeString(profile.authenticationMethod.name, MAX_ENUM_BYTES)
-                data.writeString(profile.password, MAX_PASSWORD_BYTES)
-                data.writeString(profile.privateKey, MAX_PRIVATE_KEY_BYTES)
-                data.writeString(profile.privateKeyPassphrase, MAX_PASSPHRASE_BYTES)
+    private fun encodePayload(profiles: List<HostProfile>): ByteArray =
+        ByteArrayOutputStream().use { output ->
+            DataOutputStream(output).use { data ->
+                data.write(payloadMagic)
+                data.writeInt(PAYLOAD_VERSION)
+                data.writeInt(profiles.size)
+                profiles.forEach { profile ->
+                    data.writeBounded(profile.id, MAX_ID_BYTES)
+                    data.writeBounded(profile.name, MAX_NAME_BYTES)
+                    data.writeBounded(profile.host, MAX_HOST_BYTES)
+                    data.writeInt(profile.port)
+                    data.writeBounded(profile.username, MAX_USERNAME_BYTES)
+                    data.writeBounded(profile.protocol.name, MAX_ENUM_BYTES)
+                    data.writeBounded(profile.authenticationMethod.name, MAX_ENUM_BYTES)
+                    data.writeBounded(profile.password, MAX_PASSWORD_BYTES)
+                    data.writeBounded(profile.privateKey, MAX_PRIVATE_KEY_BYTES)
+                    data.writeBounded(profile.privateKeyPassphrase, MAX_PASSPHRASE_BYTES)
+                }
             }
+            output.toByteArray()
         }
-        return output.toByteArray()
-    }
 
     private fun decodePayload(plaintext: ByteArray): List<HostProfile> {
         try {
             val input = ByteArrayInputStream(plaintext)
             val data = DataInputStream(input)
-            val magic = ByteArray(payloadMagic.size).also(data::readFully)
-            if (!magic.contentEquals(payloadMagic)) {
-                throw ProfileBackupException("Uszkodzona zawartość backupu.")
-            }
-            if (data.readInt() != PAYLOAD_VERSION) {
-                throw ProfileBackupException("Nieobsługiwana wersja danych profili.")
-            }
+            val magic = ByteArray(payloadMagic.size).also { data.readFully(it) }
+            if (!magic.contentEquals(payloadMagic)) fail("Uszkodzona zawartość backupu.")
+            if (data.readInt() != PAYLOAD_VERSION) fail("Nieobsługiwana wersja danych profili.")
             val count = data.readInt()
-            if (count !in 0..MAX_PROFILES) {
-                throw ProfileBackupException("Nieprawidłowa liczba profili w backupie.")
-            }
+            if (count !in 0..MAX_PROFILES) fail("Nieprawidłowa liczba profili w backupie.")
+
             val profiles = ArrayList<HostProfile>(count)
             repeat(count) {
-                val id = data.readString(MAX_ID_BYTES)
-                val name = data.readString(MAX_NAME_BYTES)
-                val host = data.readString(MAX_HOST_BYTES)
-                val port = data.readInt()
-                val username = data.readString(MAX_USERNAME_BYTES)
-                val protocol = enumValueStrict<ConnectionProtocol>(data.readString(MAX_ENUM_BYTES))
-                val authentication = enumValueStrict<AuthenticationMethod>(data.readString(MAX_ENUM_BYTES))
-                val password = data.readString(MAX_PASSWORD_BYTES)
-                val privateKey = data.readString(MAX_PRIVATE_KEY_BYTES)
-                val passphrase = data.readString(MAX_PASSPHRASE_BYTES)
                 profiles += HostProfile(
-                    id = id,
-                    name = name,
-                    host = host,
-                    port = port,
-                    username = username,
-                    protocol = protocol,
-                    authenticationMethod = authentication,
-                    password = password,
-                    privateKey = privateKey,
-                    privateKeyPassphrase = passphrase,
+                    id = data.readBounded(MAX_ID_BYTES),
+                    name = data.readBounded(MAX_NAME_BYTES),
+                    host = data.readBounded(MAX_HOST_BYTES),
+                    port = data.readInt(),
+                    username = data.readBounded(MAX_USERNAME_BYTES),
+                    protocol = enumStrict(data.readBounded(MAX_ENUM_BYTES)),
+                    authenticationMethod = enumStrict(data.readBounded(MAX_ENUM_BYTES)),
+                    password = data.readBounded(MAX_PASSWORD_BYTES),
+                    privateKey = data.readBounded(MAX_PRIVATE_KEY_BYTES),
+                    privateKeyPassphrase = data.readBounded(MAX_PASSPHRASE_BYTES),
                 )
             }
-            if (input.available() != 0) {
-                throw ProfileBackupException("Backup zawiera nadmiarowe dane profili.")
-            }
+            if (input.available() != 0) fail("Backup zawiera nadmiarowe dane profili.")
             validateProfiles(profiles)
             return profiles
         } catch (error: ProfileBackupException) {
@@ -298,45 +277,48 @@ object ProfileBackupCodec {
 
     private fun validatePassword(password: CharArray) {
         if (password.size < MIN_PASSWORD_CHARS) {
-            throw ProfileBackupException("Hasło backupu musi mieć co najmniej $MIN_PASSWORD_CHARS znaków.")
+            fail("Hasło backupu musi mieć co najmniej $MIN_PASSWORD_CHARS znaków.")
         }
     }
 
     private fun validateProfiles(profiles: List<HostProfile>) {
-        if (profiles.size > MAX_PROFILES) throw ProfileBackupException("Zbyt wiele profili w backupie.")
+        if (profiles.size > MAX_PROFILES) fail("Zbyt wiele profili w backupie.")
         val ids = HashSet<String>(profiles.size)
         profiles.forEach { profile ->
             requireField(profile.id, "identyfikator profilu", MAX_ID_BYTES)
-            if (!ids.add(profile.id)) throw ProfileBackupException("Backup zawiera zduplikowane profile.")
+            if (!ids.add(profile.id)) fail("Backup zawiera zduplikowane profile.")
             requireField(profile.name, "nazwa profilu", MAX_NAME_BYTES)
             requireField(profile.host, "host", MAX_HOST_BYTES)
             requireField(profile.username, "użytkownik", MAX_USERNAME_BYTES)
-            if (profile.port !in 1..65_535) throw ProfileBackupException("Profil zawiera nieprawidłowy port.")
+            if (profile.port !in 1..65_535) fail("Profil zawiera nieprawidłowy port.")
             requireLength(profile.password, "hasło SSH", MAX_PASSWORD_BYTES)
             requireLength(profile.privateKey, "klucz prywatny", MAX_PRIVATE_KEY_BYTES)
             requireLength(profile.privateKeyPassphrase, "passphrase", MAX_PASSPHRASE_BYTES)
             if (profile.authenticationMethod == AuthenticationMethod.PRIVATE_KEY && profile.privateKey.isBlank()) {
-                throw ProfileBackupException("Profil klucza prywatnego nie zawiera klucza.")
+                fail("Profil klucza prywatnego nie zawiera klucza.")
             }
         }
     }
 
     private fun requireField(value: String, label: String, maxBytes: Int) {
-        if (value.isBlank()) throw ProfileBackupException("Puste pole: $label.")
+        if (value.isBlank()) fail("Puste pole: $label.")
         requireLength(value, label, maxBytes)
     }
 
     private fun requireLength(value: String, label: String, maxBytes: Int) {
-        if (value.toByteArray(StandardCharsets.UTF_8).size > maxBytes) {
-            throw ProfileBackupException("Pole '$label' przekracza dozwolony rozmiar.")
-        }
-        if ('\u0000' in value) throw ProfileBackupException("Pole '$label' zawiera niedozwolony znak.")
-    }
-
-    private fun DataOutputStream.writeString(value: String, maxBytes: Int) {
         val bytes = value.toByteArray(StandardCharsets.UTF_8)
         try {
-            if (bytes.size > maxBytes) throw ProfileBackupException("Pole backupu jest zbyt duże.")
+            if (bytes.size > maxBytes) fail("Pole '$label' przekracza dozwolony rozmiar.")
+            if ('\u0000' in value) fail("Pole '$label' zawiera niedozwolony znak.")
+        } finally {
+            bytes.fill(0)
+        }
+    }
+
+    private fun DataOutputStream.writeBounded(value: String, maxBytes: Int) {
+        val bytes = value.toByteArray(StandardCharsets.UTF_8)
+        try {
+            if (bytes.size > maxBytes) fail("Pole backupu jest zbyt duże.")
             writeInt(bytes.size)
             write(bytes)
         } finally {
@@ -344,9 +326,9 @@ object ProfileBackupCodec {
         }
     }
 
-    private fun DataInputStream.readString(maxBytes: Int): String {
+    private fun DataInputStream.readBounded(maxBytes: Int): String {
         val length = readInt()
-        if (length !in 0..maxBytes) throw ProfileBackupException("Nieprawidłowa długość pola backupu.")
+        if (length !in 0..maxBytes) fail("Nieprawidłowa długość pola backupu.")
         val bytes = ByteArray(length)
         return try {
             readFully(bytes)
@@ -356,7 +338,9 @@ object ProfileBackupCodec {
         }
     }
 
-    private inline fun <reified T : Enum<T>> enumValueStrict(raw: String): T =
+    private inline fun <reified T : Enum<T>> enumStrict(raw: String): T =
         enumValues<T>().firstOrNull { it.name == raw }
             ?: throw ProfileBackupException("Backup zawiera nieznaną wartość konfiguracji.")
+
+    private fun fail(message: String): Nothing = throw ProfileBackupException(message)
 }
