@@ -16,6 +16,8 @@ import eu.blackserv.clientssh.R
 import eu.blackserv.clientssh.model.AuthenticationMethod
 import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.ssh.HostKeyTrustBus
+import eu.blackserv.clientssh.ssh.InteractiveHostKeyRepository
 import eu.blackserv.clientssh.storage.LocalAppStore
 import eu.blackserv.clientssh.terminal.PendingSessionRegistry
 import eu.blackserv.clientssh.terminal.TerminalConnectionState
@@ -133,6 +135,7 @@ class TerminalSessionService : Service() {
     }
 
     override fun onDestroy() {
+        HostKeyTrustBus.cancelPending()
         connectionJob?.cancel()
         reconnectJob?.cancel()
         closeTransport()
@@ -205,8 +208,13 @@ class TerminalSessionService : Service() {
             }
 
             val session = jsch.getSession(username, host, profile.port).apply {
+                hostKeyRepository = InteractiveHostKeyRepository(
+                    delegate = jsch.hostKeyRepository,
+                    displayHost = host,
+                    port = profile.port,
+                )
                 if (profile.authenticationMethod == AuthenticationMethod.PASSWORD) setPassword(profile.password)
-                setConfig("StrictHostKeyChecking", "accept-new")
+                setConfig("StrictHostKeyChecking", "yes")
                 setConfig(
                     "PreferredAuthentications",
                     when (profile.authenticationMethod) {
@@ -327,6 +335,7 @@ class TerminalSessionService : Service() {
 
     private fun disconnectAndStop(startId: Int, message: String) {
         maintainSession = false
+        HostKeyTrustBus.cancelPending()
         reconnectJob?.cancel()
         connectionJob?.cancel()
         closeTransport()
