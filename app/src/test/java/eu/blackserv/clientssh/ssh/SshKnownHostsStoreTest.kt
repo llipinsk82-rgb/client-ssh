@@ -2,6 +2,7 @@ package eu.blackserv.clientssh.ssh
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -59,5 +60,25 @@ class SshKnownHostsStoreTest {
 
         assertEquals("older\n", directory.resolve("known_hosts.accept-new-unverified").readText())
         assertEquals("newer\n", directory.resolve("known_hosts.accept-new-unverified.2").readText())
+    }
+
+    @Test
+    fun `known hosts directory in place of file is rejected`() {
+        val directory = temporaryFolder.newFolder("ssh")
+        directory.resolve("known_hosts").mkdir()
+
+        assertThrows(IllegalStateException::class.java) {
+            SshKnownHostsStore.prepareDirectory(directory)
+        }
+    }
+
+    @Test
+    fun `migration marker directory is rejected`() {
+        val directory = temporaryFolder.newFolder("ssh")
+        directory.resolve(".explicit-host-key-verification-v1").mkdir()
+
+        assertThrows(IllegalStateException::class.java) {
+            SshKnownHostsStore.prepareDirectory(directory)
+        }
     }
 }
