@@ -15,9 +15,12 @@ object SshKnownHostsStore {
         check(directory.exists() || directory.mkdirs()) {
             "Nie można utworzyć prywatnego katalogu known_hosts"
         }
+        check(directory.isDirectory) { "Ścieżka SSH nie jest katalogiem" }
 
         val active = File(directory, ACTIVE_FILE_NAME)
         val marker = File(directory, MIGRATION_MARKER_FILE_NAME)
+        check(!active.exists() || active.isFile) { "Ścieżka known_hosts nie jest plikiem" }
+        check(!marker.exists() || marker.isFile) { "Marker migracji known_hosts nie jest plikiem" }
 
         if (!marker.isFile) {
             if (active.isFile && active.length() > 0L) {
@@ -29,6 +32,9 @@ object SshKnownHostsStore {
             securePrivateFile(active)
 
             val temporaryMarker = File(directory, "$MIGRATION_MARKER_FILE_NAME.tmp")
+            check(!temporaryMarker.exists() || temporaryMarker.isFile) {
+                "Tymczasowy marker migracji known_hosts nie jest plikiem"
+            }
             temporaryMarker.writeText("v1\n")
             securePrivateFile(temporaryMarker)
             check(temporaryMarker.renameTo(marker) || runCatching {
@@ -44,6 +50,7 @@ object SshKnownHostsStore {
             securePrivateFile(active)
         }
 
+        check(active.isFile) { "Aktywny known_hosts nie jest plikiem" }
         active
     }
 
