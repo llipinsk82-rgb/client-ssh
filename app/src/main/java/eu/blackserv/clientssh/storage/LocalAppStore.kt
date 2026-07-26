@@ -62,7 +62,7 @@ class LocalAppStore(context: Context) {
         val previousIds = loadProfiles().mapTo(mutableSetOf()) { it.id }
         val currentIds = profiles.mapTo(mutableSetOf()) { it.id }
         val array = JSONArray()
-        profiles.forEach { profile -> runCatching { array.put(profile.toJson()) } }
+        profiles.forEach { profile -> array.put(profile.toJson()) }
         val raw = array.toString()
         check(prefs.edit().putString(KEY_PROFILES, raw).putString(KEY_PROFILES_BACKUP, raw).commit()) {
             "Nie udało się zapisać profili"
@@ -153,7 +153,7 @@ class LocalAppStore(context: Context) {
     )
 
     private fun encryptOrBlank(value: String): String =
-        if (value.isBlank()) "" else runCatching { encrypt(value) }.getOrDefault("")
+        if (value.isBlank()) "" else encrypt(value)
 
     private fun decryptOrBlank(value: String): String =
         if (value.isBlank()) "" else runCatching { decrypt(value) }.getOrDefault("")
