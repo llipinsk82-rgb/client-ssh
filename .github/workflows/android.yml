@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      RELEASE_SIGNING_ENABLED: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'pull_request' && github.event.pull_request.number == 21 && github.event.pull_request.head.repo.full_name == github.repository && github.actor == 'llipinsk82-rgb') }}
+      RELEASE_SIGNING_ENABLED: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -217,7 +217,7 @@ jobs:
         if: env.RELEASE_SIGNING_ENABLED == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event_name == 'pull_request' && 'client-ssh-release-verification' || 'client-ssh-release' }}
+          name: client-ssh-release
           path: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/apk/release/APK_METADATA.txt
