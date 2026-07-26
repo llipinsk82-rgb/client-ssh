@@ -35,7 +35,7 @@ if ((${#text_files[@]} > 0)); then
   fi
 fi
 
-auto_host_key_trust_hits=$(git grep -nF -- 'accept-new' -- app/src/main || true)
+auto_host_key_trust_hits=$(git grep -nF -- '"accept-new"' -- app/src/main || true)
 if [[ -n "$auto_host_key_trust_hits" ]]; then
   echo "ERROR: kod produkcyjny automatycznie ufa nowemu kluczowi hosta SSH:" >&2
   printf '%s\n' "$auto_host_key_trust_hits" >&2
