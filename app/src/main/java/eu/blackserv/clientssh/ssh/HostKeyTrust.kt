@@ -5,11 +5,11 @@ import com.jcraft.jsch.HostKeyRepository
 import com.jcraft.jsch.UserInfo
 import java.security.MessageDigest
 import java.util.Base64
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class HostKeyTrustKind {
     UNKNOWN,
@@ -26,15 +26,14 @@ data class HostKeyTrustRequest(
 )
 
 interface HostKeyTrustDecider {
-    fun awaitTrust(request: HostKeyTrustRequest, timeoutMillis: Long): Boolean
+    fun publishUnknown(request: HostKeyTrustRequest): Boolean
     fun reportChanged(request: HostKeyTrustRequest)
 }
 
 object HostKeyTrustBus : HostKeyTrustDecider {
     private data class Pending(
         val request: HostKeyTrustRequest,
-        val latch: CountDownLatch = CountDownLatch(1),
-        var trusted: Boolean = false,
+        val decision: CompletableDeferred<Boolean> = CompletableDeferred(),
     )
 
     private val lock = Any()
@@ -59,30 +58,14 @@ object HostKeyTrustBus : HostKeyTrustDecider {
         kind = kind,
     )
 
-    override fun awaitTrust(request: HostKeyTrustRequest, timeoutMillis: Long): Boolean {
+    override fun publishUnknown(request: HostKeyTrustRequest): Boolean {
         require(request.kind == HostKeyTrustKind.UNKNOWN)
-        require(timeoutMillis in 1_000L..300_000L)
-        val item = Pending(request)
         synchronized(lock) {
             if (pending != null || changedAlertId != null) return false
-            pending = item
+            pending = Pending(request)
             _request.value = request
+            return true
         }
-
-        val completed = try {
-            item.latch.await(timeoutMillis, TimeUnit.MILLISECONDS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            false
-        }
-
-        synchronized(lock) {
-            if (pending === item) {
-                pending = null
-                _request.value = null
-            }
-        }
-        return completed && item.trusted
     }
 
     override fun reportChanged(request: HostKeyTrustRequest) {
@@ -94,39 +77,59 @@ object HostKeyTrustBus : HostKeyTrustDecider {
         }
     }
 
-    fun trust(id: Long) = respond(id, trusted = true)
+    fun pendingUnknownFor(host: String, port: Int): HostKeyTrustRequest? = synchronized(lock) {
+        pending?.request?.takeIf { it.host == host && it.port == port }
+    }
 
-    fun reject(id: Long) = respond(id, trusted = false)
+    suspend fun awaitDecision(id: Long, timeoutMillis: Long): Boolean {
+        require(timeoutMillis in 1_000L..300_000L)
+        val item = synchronized(lock) {
+            pending?.takeIf { it.request.id == id }
+        } ?: return false
+
+        val result = withTimeoutOrNull(timeoutMillis) { item.decision.await() } ?: false
+        synchronized(lock) {
+            if (pending === item) {
+                pending = null
+                _request.value = null
+            }
+        }
+        return result
+    }
+
+    fun trust(id: Long) = completeUnknown(id, trusted = true)
+
+    fun reject(id: Long) = completeUnknown(id, trusted = false)
 
     fun dismiss(id: Long) {
         synchronized(lock) {
             if (changedAlertId == id) {
                 changedAlertId = null
                 _request.value = null
-            } else if (pending?.request?.id == id) {
-                pending?.trusted = false
-                pending?.latch?.countDown()
+                return
             }
         }
+        reject(id)
     }
 
     fun cancelPending() {
-        synchronized(lock) {
-            pending?.trusted = false
-            pending?.latch?.countDown()
+        val item = synchronized(lock) {
+            val current = pending
             pending = null
             changedAlertId = null
             _request.value = null
+            current
         }
+        item?.decision?.complete(false)
     }
 
-    private fun respond(id: Long, trusted: Boolean) {
-        synchronized(lock) {
-            val item = pending ?: return
-            if (item.request.id != id) return
-            item.trusted = trusted
-            item.latch.countDown()
-        }
+    private fun completeUnknown(id: Long, trusted: Boolean) {
+        val item = synchronized(lock) {
+            pending?.takeIf { it.request.id == id }?.also {
+                _request.value = null
+            }
+        } ?: return
+        item.decision.complete(trusted)
     }
 }
 
@@ -135,8 +138,16 @@ class InteractiveHostKeyRepository(
     private val displayHost: String,
     private val port: Int,
     private val decider: HostKeyTrustDecider = HostKeyTrustBus,
-    private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
 ) : HostKeyRepository {
+    private data class PendingKey(
+        val requestId: Long,
+        val repositoryHost: String,
+        val key: ByteArray,
+    )
+
+    private val lock = Any()
+    private var pendingKey: PendingKey? = null
+
     override fun check(repositoryHost: String, key: ByteArray): Int {
         val existing = delegate.check(repositoryHost, key)
         if (existing == HostKeyRepository.OK) return existing
@@ -146,12 +157,23 @@ class InteractiveHostKeyRepository(
         } else {
             HostKeyTrustKind.UNKNOWN
         }
-        val algorithm = sshHostKeyAlgorithm(key)
-        val fingerprint = sshHostKeyFingerprintSha256(key)
         val request = if (decider === HostKeyTrustBus) {
-            HostKeyTrustBus.newRequest(displayHost, port, algorithm, fingerprint, kind)
+            HostKeyTrustBus.newRequest(
+                host = displayHost,
+                port = port,
+                algorithm = sshHostKeyAlgorithm(key),
+                fingerprintSha256 = sshHostKeyFingerprintSha256(key),
+                kind = kind,
+            )
         } else {
-            HostKeyTrustRequest(1L, displayHost, port, algorithm, fingerprint, kind)
+            HostKeyTrustRequest(
+                id = 1L,
+                host = displayHost,
+                port = port,
+                algorithm = sshHostKeyAlgorithm(key),
+                fingerprintSha256 = sshHostKeyFingerprintSha256(key),
+                kind = kind,
+            )
         }
 
         if (existing == HostKeyRepository.CHANGED) {
@@ -159,10 +181,48 @@ class InteractiveHostKeyRepository(
             return HostKeyRepository.CHANGED
         }
 
-        if (!decider.awaitTrust(request, timeoutMillis)) return HostKeyRepository.NOT_INCLUDED
+        val candidate = PendingKey(request.id, repositoryHost, key.copyOf())
+        synchronized(lock) {
+            pendingKey?.key?.fill(0)
+            pendingKey = candidate
+        }
+        if (!decider.publishUnknown(request)) {
+            discard(request.id)
+        }
+        return HostKeyRepository.NOT_INCLUDED
+    }
 
-        delegate.add(HostKey(repositoryHost, key.copyOf()), null)
-        return delegate.check(repositoryHost, key)
+    fun persist(requestId: Long): Boolean {
+        val item = synchronized(lock) {
+            pendingKey?.takeIf { it.requestId == requestId }?.also { pendingKey = null }
+        } ?: return false
+
+        val storedKey = item.key.copyOf()
+        return try {
+            delegate.add(HostKey(item.repositoryHost, storedKey), null)
+            delegate.check(item.repositoryHost, item.key) == HostKeyRepository.OK
+        } catch (_: Throwable) {
+            storedKey.fill(0)
+            false
+        } finally {
+            item.key.fill(0)
+        }
+    }
+
+    fun discard(requestId: Long) {
+        val item = synchronized(lock) {
+            pendingKey?.takeIf { it.requestId == requestId }?.also { pendingKey = null }
+        }
+        item?.key?.fill(0)
+    }
+
+    fun discardAll() {
+        val item = synchronized(lock) {
+            val current = pendingKey
+            pendingKey = null
+            current
+        }
+        item?.key?.fill(0)
     }
 
     override fun add(hostkey: HostKey, userinfo: UserInfo?) = delegate.add(hostkey, userinfo)
@@ -176,10 +236,6 @@ class InteractiveHostKeyRepository(
     override fun getHostKey(): Array<HostKey> = delegate.hostKey
 
     override fun getHostKey(host: String?, type: String?): Array<HostKey> = delegate.getHostKey(host, type)
-
-    private companion object {
-        const val DEFAULT_TIMEOUT_MILLIS = 120_000L
-    }
 }
 
 internal fun sshHostKeyFingerprintSha256(key: ByteArray): String {
