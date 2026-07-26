@@ -2,6 +2,7 @@ package eu.blackserv.clientssh.backup
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -35,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +54,7 @@ import eu.blackserv.clientssh.storage.LocalAppStore
 import eu.blackserv.clientssh.ui.theme.ClientSshTheme
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,6 +62,7 @@ import kotlinx.coroutines.withContext
 class ProfileBackupActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val appStore = LocalAppStore(applicationContext)
         setContent {
             ClientSshTheme(skin = appStore.loadAppSettings().skin, darkTheme = true) {
@@ -102,6 +106,13 @@ private fun ProfileBackupScreen(
     var pendingImport by remember { mutableStateOf<ByteArray?>(null) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<OperationMessage?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            pendingExport?.fill(0)
+            pendingImport?.fill(0)
+        }
+    }
 
     val createBackup = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(BACKUP_MIME_TYPE),
@@ -288,12 +299,19 @@ private fun ProfileBackupScreen(
                                 message = OperationMessage("Hasła backupu nie są identyczne.", isError = true)
                                 return@launch
                             }
-                            val result = withContext(Dispatchers.Default) {
-                                runCatching {
-                                    ProfileBackupCodec.encrypt(appStore.loadProfiles(), passwordChars)
-                                }
+                            val result = try {
+                                Result.success(
+                                    withContext(Dispatchers.Default) {
+                                        ProfileBackupCodec.encrypt(appStore.loadProfiles(), passwordChars)
+                                    },
+                                )
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Throwable) {
+                                Result.failure(error)
+                            } finally {
+                                passwordChars.fill('\u0000')
                             }
-                            passwordChars.fill('\u0000')
                             busy = false
                             result.onSuccess { encrypted ->
                                 pendingExport?.fill(0)
@@ -312,10 +330,19 @@ private fun ProfileBackupScreen(
                                 message = OperationMessage("Brak wybranego pliku backupu.", isError = true)
                                 return@launch
                             }
-                            val result = withContext(Dispatchers.Default) {
-                                runCatching { ProfileBackupCodec.decrypt(encrypted, passwordChars) }
+                            val result = try {
+                                Result.success(
+                                    withContext(Dispatchers.Default) {
+                                        ProfileBackupCodec.decrypt(encrypted, passwordChars)
+                                    },
+                                )
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Throwable) {
+                                Result.failure(error)
+                            } finally {
+                                passwordChars.fill('\u0000')
                             }
-                            passwordChars.fill('\u0000')
                             result.onSuccess { profiles ->
                                 val saved = withContext(Dispatchers.IO) {
                                     runCatching {
@@ -364,18 +391,23 @@ private fun BackupPasswordDialog(
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
     val export = mode == PasswordDialogMode.EXPORT
-    val canConfirm = password.length >= ProfileBackupCodec.MIN_PASSWORD_CHARS &&
-        (!export || confirmation.length >= ProfileBackupCodec.MIN_PASSWORD_CHARS)
+    val canConfirm = password.length in ProfileBackupCodec.MIN_PASSWORD_CHARS..ProfileBackupCodec.MAX_PASSWORD_CHARS &&
+        (!export || confirmation.length in ProfileBackupCodec.MIN_PASSWORD_CHARS..ProfileBackupCodec.MAX_PASSWORD_CHARS)
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (export) "Hasło nowego backupu" else "Hasło backupu") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Minimum ${ProfileBackupCodec.MIN_PASSWORD_CHARS} znaków. Nie używaj hasła klucza SSH ani hasła serwera.")
+                Text(
+                    "Od ${ProfileBackupCodec.MIN_PASSWORD_CHARS} do ${ProfileBackupCodec.MAX_PASSWORD_CHARS} znaków. " +
+                        "Nie używaj hasła klucza SSH ani hasła serwera.",
+                )
                 OutlinedTextField(
                     value = password,
-                    onValueChange = { password = it },
+                    onValueChange = {
+                        if (it.length <= ProfileBackupCodec.MAX_PASSWORD_CHARS) password = it
+                    },
                     label = { Text("Hasło backupu") },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
@@ -384,7 +416,9 @@ private fun BackupPasswordDialog(
                 if (export) {
                     OutlinedTextField(
                         value = confirmation,
-                        onValueChange = { confirmation = it },
+                        onValueChange = {
+                            if (it.length <= ProfileBackupCodec.MAX_PASSWORD_CHARS) confirmation = it
+                        },
                         label = { Text("Powtórz hasło") },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
