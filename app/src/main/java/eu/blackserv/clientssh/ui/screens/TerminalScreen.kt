@@ -85,7 +85,7 @@ private data class TerminalShortcut(
 
 internal fun terminalCompletionInput(command: String): String = command + "\t"
 
-internal fun terminalSubmitInput(command: String): String = command + "\r"
+internal fun terminalSubmitInput(command: String): String = command + "\n"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
