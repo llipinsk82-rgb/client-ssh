@@ -1,0 +1,81 @@
+name: Migration helper validation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/migration-helper.yml'
+      - 'app/build.gradle.kts'
+      - 'app/src/main/AndroidManifest.xml'
+      - 'app/src/main/java/eu/blackserv/clientssh/backup/**'
+      - 'app/src/main/java/eu/blackserv/clientssh/ui/screens/SettingsScreen.kt'
+      - 'app/src/test/java/eu/blackserv/clientssh/backup/**'
+      - 'scripts/build-old-cert-migration-apk.sh'
+      - 'scripts/check-no-release-secrets.sh'
+      - 'docs/SECURE_PROFILE_BACKUP.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migration-helper-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reject committed signing secrets
+        shell: bash
+        run: bash scripts/check-no-release-secrets.sh
+      - name: Validate local migration helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/build-old-cert-migration-apk.sh
+          bash scripts/build-old-cert-migration-apk.sh --help >/dev/null
+          grep -Fq -- '--ks-pass "file:$store_password_file"' scripts/build-old-cert-migration-apk.sh
+          grep -Fq -- '--key-pass "file:$key_password_file"' scripts/build-old-cert-migration-apk.sh
+          if grep -Eq -- '--(ks|key)-pass[[:space:]]+"?pass:' scripts/build-old-cert-migration-apk.sh; then
+            echo 'Migration helper contains an inline apksigner password.' >&2
+            exit 1
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses >/dev/null || true
+      - name: Install Android SDK 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Build and validate unsigned migration source APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          env \
+            -u CLIENT_SSH_RELEASE_STORE_PASSWORD \
+            -u CLIENT_SSH_RELEASE_KEY_ALIAS \
+            -u CLIENT_SSH_RELEASE_KEY_PASSWORD \
+            gradle :app:assembleRelease --stacktrace --console=plain
+
+          mapfile -t candidates < <(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*unsigned*.apk' -print)
+          test "${#candidates[@]}" -eq 1
+          apk="${candidates[0]}"
+
+          badging="$ANDROID_HOME/build-tools/36.0.0/aapt dump badging "$apk" | head -n 1"
+          badging="$($ANDROID_HOME/build-tools/36.0.0/aapt dump badging "$apk" | head -n 1)"
+          package_name="$(printf '%s\n' "$badging" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+          test "$package_name" = 'eu.blackserv.clientssh'
+
+          aligned="${RUNNER_TEMP}/client-ssh-migration-aligned.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -P 16 -f 4 "$apk" "$aligned"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "$aligned"
+          test -s "$aligned"
