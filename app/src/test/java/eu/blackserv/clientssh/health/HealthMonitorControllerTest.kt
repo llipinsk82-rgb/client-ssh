@@ -76,6 +76,12 @@ class HealthMonitorControllerTest {
                 responseTimeMs = 12L,
             ),
         )
+        fixture.telemetryRepository.append(
+            SshTelemetryRecord.success("a", 1_000L, telemetrySample()),
+        )
+        fixture.telemetryRepository.append(
+            SshTelemetryRecord.success("b", 2_000L, telemetrySample()),
+        )
 
         fixture.controller.removeProfile("a")
 
@@ -84,6 +90,8 @@ class HealthMonitorControllerTest {
         assertNull(fixture.snapshotRepository.get("a"))
         assertTrue(fixture.historyRepository.get("a").isEmpty())
         assertEquals(1, fixture.historyRepository.get("b").size)
+        assertNull(fixture.telemetryRepository.latest("a"))
+        assertEquals("b", fixture.telemetryRepository.latestAll().single().profileId)
     }
 
     private class Fixture {
@@ -91,11 +99,13 @@ class HealthMonitorControllerTest {
         val configRepository = HealthMonitorConfigRepository(MemoryStorage())
         val snapshotRepository = HealthCheckRepository(MemoryStorage())
         val historyRepository = HealthCheckHistoryRepository(MemoryStorage())
+        val telemetryRepository = SshTelemetryRepository(MemoryStorage())
         val controller = HealthMonitorController(
             configRepository = configRepository,
             snapshotRepository = snapshotRepository,
             scheduler = scheduler,
             historyRepository = historyRepository,
+            telemetryRepository = telemetryRepository,
         )
     }
 
@@ -123,5 +133,25 @@ class HealthMonitorControllerTest {
         override fun write(value: String) {
             this.value = value
         }
+    }
+
+    private companion object {
+        fun telemetrySample() = SshTelemetrySample(
+            cpuUsagePercent = 10.0,
+            memoryTotalKb = 1_000,
+            memoryAvailableKb = 500,
+            load1 = 0.1,
+            load5 = 0.1,
+            load15 = 0.1,
+            diskTotalKb = 10_000,
+            diskUsedKb = 4_000,
+            diskAvailableKb = 6_000,
+            diskUsedPercent = 40,
+            uptimeSeconds = 100,
+            networkRxBytesPerSecond = 10,
+            networkTxBytesPerSecond = 20,
+            pingStatus = TelemetryPingStatus.OK,
+            pingMs = 5.0,
+        )
     }
 }
