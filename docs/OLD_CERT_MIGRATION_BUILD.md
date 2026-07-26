@@ -16,6 +16,7 @@ Build migracyjny jest uznawany za właściwy tylko wtedy, gdy jednocześnie:
 - stary JKS znajduje się poza repozytorium i ma uprawnienia bez dostępu grupy/innych,
 - certyfikat JKS odpowiada certyfikatowi APK faktycznie zainstalowanego na telefonie,
 - gotowy APK ma oczekiwany package, `versionCode` i `versionName`,
+- `versionCode` jest wyższy niż w zainstalowanej aplikacji,
 - jego SHA-256 oraz commit źródłowy zostały zapisane lokalnie,
 - artefakt nie został opublikowany w GitHub Releases, Actions, Issue ani publicznym hostingu.
 
@@ -55,7 +56,15 @@ bash scripts/build-old-cert-migration-apk.sh \
   --adb-reference
 ```
 
-Skrypt interaktywnie poprosi o hasło magazynu i klucza. Nie przekazuj ich w argumentach, zmiennych środowiskowych, czacie ani Issue.
+Skrypt najpierw:
+
+1. sprawdza czyste źródło i brak sekretów w repo,
+2. pobiera certyfikat APK zainstalowanego na telefonie,
+3. sprawdza, czy nowy `versionCode` jest wyższy,
+4. uruchamia testy jednostkowe,
+5. buduje i wyrównuje unsigned APK.
+
+Dopiero po tych krokach interaktywnie prosi o hasło magazynu i klucza. Nie przekazuj ich w argumentach, zmiennych środowiskowych, czacie ani Issue.
 
 Alternatywnie można przekazać wcześniej pobrany bazowy APK:
 
@@ -68,13 +77,13 @@ bash scripts/build-old-cert-migration-apk.sh \
 
 ## Wynik
 
-Domyślny katalog:
+Domyślny katalog bazowy:
 
 ```text
 ~/.client-ssh/migration-build/
 ```
 
-Zawiera:
+Każdy build otrzymuje osobny podkatalog `<versionName>-<commit>`, zawierający:
 
 - jednorazowy APK migracyjny,
 - `SHA256SUMS.txt`,
