@@ -1,5 +1,6 @@
 package eu.blackserv.clientssh.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -29,9 +31,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.blackserv.clientssh.BuildConfig
+import eu.blackserv.clientssh.backup.ProfileBackupActivity
 import eu.blackserv.clientssh.model.AppSettings
 import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.TerminalSettings
@@ -45,6 +49,7 @@ fun SettingsScreen(
     onTerminalSettingsChange: (TerminalSettings) -> Unit,
     onCheckUpdates: () -> Unit,
 ) {
+    val context = LocalContext.current
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -115,7 +120,30 @@ fun SettingsScreen(
 
             PlannedSetting(title = "Font terminala", value = "Wkrótce")
             PlannedSetting(title = "Język aplikacji", value = "Polski")
-            PlannedSetting(title = "Eksport / import konfiguracji", value = "Wkrótce")
+
+            Spacer(Modifier.height(2.dp))
+
+            SectionTitle(
+                icon = { Icon(Icons.Default.Security, contentDescription = null) },
+                title = "Bezpieczna migracja",
+                subtitle = "Szyfrowany eksport i import profili wraz z sekretami.",
+            )
+
+            OutlinedButton(
+                onClick = {
+                    context.startActivity(Intent(context, ProfileBackupActivity::class.java))
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.Security, contentDescription = null)
+                Text("Eksport / import profili", modifier = Modifier.padding(start = 8.dp))
+            }
+
+            Text(
+                "Backup jest szyfrowany lokalnie. Nie wysyłaj pliku ani hasła przez czat, GitHub Issues lub publiczne załączniki.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
 
             Spacer(Modifier.height(2.dp))
 
