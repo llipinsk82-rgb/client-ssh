@@ -58,6 +58,21 @@ object TerminalSessionBus {
         )
     }
 
+    fun markAwaitingHostKey(profile: HostProfile) {
+        writer = null
+        _snapshot.update { current ->
+            val previousOutput = if (current.profileId == profile.id) current.output else ""
+            val notice = "\n[Bezpieczeństwo] Oczekiwanie na weryfikację klucza hosta SSH.\n"
+            TerminalSnapshot(
+                profileId = profile.id,
+                profileName = profile.name,
+                state = TerminalConnectionState.CONNECTING,
+                statusText = "Zweryfikuj fingerprint hosta…",
+                output = (previousOutput + notice).takeLast(MAX_BUFFER_CHARS),
+            )
+        }
+    }
+
     fun markReconnecting(
         profile: HostProfile,
         status: String = "Ponowne łączenie…",
