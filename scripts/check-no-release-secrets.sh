@@ -35,9 +35,16 @@ if ((${#text_files[@]} > 0)); then
   fi
 fi
 
+auto_host_key_trust_hits=$(git grep -nF -- 'accept-new' -- app/src/main || true)
+if [[ -n "$auto_host_key_trust_hits" ]]; then
+  echo "ERROR: kod produkcyjny automatycznie ufa nowemu kluczowi hosta SSH:" >&2
+  printf '%s\n' "$auto_host_key_trust_hits" >&2
+  fail=1
+fi
+
 if ((fail != 0)); then
-  echo "Przenieś materiał podpisujący do GitHub Actions Secrets i usuń go z historii Git." >&2
+  echo "Przenieś materiał podpisujący do GitHub Actions Secrets i nie omijaj jawnej weryfikacji host key." >&2
   exit 1
 fi
 
-echo "OK: brak śledzonych keystore, kluczy prywatnych i jawnych haseł podpisu."
+echo "OK: brak śledzonych kluczy/keystore, jawnych haseł podpisu i automatycznego zaufania host key."
