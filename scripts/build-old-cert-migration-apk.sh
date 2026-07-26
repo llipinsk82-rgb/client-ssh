@@ -96,9 +96,16 @@ cleanup() {
   store_password_repeat=""
   key_password=""
   key_password_repeat=""
-  [[ -n "$store_password_file" ]] && rm -f -- "$store_password_file"
-  [[ -n "$key_password_file" ]] && rm -f -- "$key_password_file"
-  [[ -n "$tmp_dir" ]] && rm -rf -- "$tmp_dir"
+  if [[ -n "$store_password_file" ]]; then
+    rm -f -- "$store_password_file"
+  fi
+  if [[ -n "$key_password_file" ]]; then
+    rm -f -- "$key_password_file"
+  fi
+  if [[ -n "$tmp_dir" ]]; then
+    rm -rf -- "$tmp_dir"
+  fi
+  return 0
 }
 trap cleanup EXIT
 trap 'exit 130' INT
