@@ -23,12 +23,10 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.WrapText
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -106,7 +104,6 @@ fun TerminalScreen(
     var terminalFontSize by remember { mutableStateOf(13.sp) }
     var command by remember { mutableStateOf("") }
     var showFavorites by remember { mutableStateOf(false) }
-    var showHealth by remember { mutableStateOf(false) }
     var connectedOnce by remember(profile.id) { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val verticalScroll = rememberScrollState()
@@ -190,9 +187,6 @@ fun TerminalScreen(
                     title = { Text("") },
                     navigationIcon = { TextButton(onClick = onClose) { Text("Wstecz") } },
                     actions = {
-                        IconButton(onClick = { showHealth = !showHealth }) {
-                            Icon(Icons.Default.HealthAndSafety, contentDescription = "Health")
-                        }
                         IconButton(onClick = { showFavorites = true }) {
                             Icon(Icons.Default.Favorite, contentDescription = "Ulubione")
                         }
@@ -226,8 +220,6 @@ fun TerminalScreen(
                 status = session.statusText,
                 connected = session.state == TerminalConnectionState.CONNECTED,
             )
-
-            if (showHealth) HealthCard(profile)
 
             Box(
                 modifier = Modifier
@@ -363,17 +355,6 @@ private fun TerminalKeyBar(shortcuts: List<TerminalShortcut>) {
                 ),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             ) { Text(shortcut.label) }
-        }
-    }
-}
-
-@Composable
-private fun HealthCard(profile: HostProfile) {
-    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            Text("Health • ${profile.name}")
-            Text("CPU —   RAM —   LOAD —   DYSK —   PING —")
-            Text("Dane pojawią się po podłączeniu poleceń diagnostycznych.")
         }
     }
 }
