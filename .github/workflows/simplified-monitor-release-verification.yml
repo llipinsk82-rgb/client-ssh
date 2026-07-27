@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   signed-test:
@@ -139,3 +140,29 @@ jobs:
         run: |
           rm -f app/signing/client-ssh-release.jks
           rm -f "${RUNNER_TEMP}/client-ssh-release-storepass"
+
+      - name: Report guarded run to PR
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK_SHA="$(cut -d' ' -f1 signed-artifact/SHA256SUMS.txt)"
+          CERT_SHA="$(tr -d '\r\n' < signed-artifact/CERTIFICATE_SHA256.txt)"
+          BODY=$(cat <<EOF
+          ## Podpisany test uproszczonego Monitora v43 — PASS
+
+          - run_id: \`${GITHUB_RUN_ID}\`
+          - source: \`${GITHUB_SHA}\`
+          - package: \`${EXPECTED_PACKAGE}\`
+          - version: \`${EXPECTED_VERSION_NAME}\` / \`${EXPECTED_VERSION_CODE}\`
+          - APK SHA-256: \`${APK_SHA}\`
+          - cert SHA-256: \`${CERT_SHA}\`
+          - artifact: \`client-ssh-0.3.6-simplified-monitor-v43\`
+          - JKS usunięty z runnera: PASS
+          EOF
+          )
+          gh api --method POST \
+            repos/llipinsk82-rgb/client-ssh/issues/31/comments \
+            -f body="$BODY" >/dev/null
