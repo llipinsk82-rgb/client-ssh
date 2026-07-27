@@ -83,6 +83,7 @@ fun ProfilesScreen(
                         status = activeSessionStatus,
                         neon = neon,
                         onEdit = onEdit,
+                        onClone = onClone,
                         onConnect = onConnect,
                         onDisconnect = onDisconnectActiveSession,
                         onSftp = onOpenSftp,
@@ -110,8 +111,9 @@ private fun EmptyProfiles(modifier: Modifier, onAdd: () -> Unit) {
 @Composable
 private fun ProfileCard(
     profile: HostProfile, active: Boolean, status: String, neon: Boolean,
-    onEdit: (HostProfile) -> Unit, onConnect: (HostProfile) -> Unit,
-    onDisconnect: () -> Unit, onSftp: (HostProfile) -> Unit,
+    onEdit: (HostProfile) -> Unit, onClone: (HostProfile) -> Unit,
+    onConnect: (HostProfile) -> Unit, onDisconnect: () -> Unit,
+    onSftp: (HostProfile) -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     val address = "${profile.username.ifBlank { "—" }}@${profile.host}:${profile.port}"
@@ -162,8 +164,8 @@ private fun ProfileCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    IconButton(onClick = { clipboard.setText(AnnotatedString(address)) }, modifier = Modifier.size(34.dp)) {
-                        Icon(Icons.Default.ContentCopy, "Kopiuj adres", modifier = Modifier.size(18.dp), tint = if (neon) Color(0xFF9CB2AA) else MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(onClick = { onClone(profile) }, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Default.FileCopy, "Klonuj profil", modifier = Modifier.size(18.dp), tint = if (neon) Color(0xFF9CB2AA) else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 

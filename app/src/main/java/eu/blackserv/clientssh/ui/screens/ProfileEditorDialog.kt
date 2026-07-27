@@ -257,13 +257,7 @@ fun ProfileEditorDialog(
 
                 if (existing != null) {
                     OutlinedButton(
-                        onClick = {
-                            buildProfile(
-                                id = UUID.randomUUID().toString(),
-                            )?.let { clone ->
-                                onClone(clone.copy(name = "${clone.name} kopia"))
-                            }
-                        },
+                        onClick = { buildProfile()?.let(onClone) },
                         enabled = formValid,
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Klonuj profil") }

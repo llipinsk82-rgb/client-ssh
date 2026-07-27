@@ -46,6 +46,7 @@ import eu.blackserv.clientssh.model.AppSettings
 import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.model.cloneHostProfile
 import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.service.TerminalSessionService
 import eu.blackserv.clientssh.ssh.HostKeyTrustBus
@@ -257,6 +258,12 @@ private fun ClientSshApp(
     }
 
     fun saveProfiles() = appStore.saveProfiles(profiles)
+    fun cloneProfile(source: HostProfile) {
+        val clone = cloneHostProfile(source, profiles.map { it.name })
+        val sourceIndex = profiles.indexOfFirst { it.id == source.id }
+        if (sourceIndex >= 0) profiles.add(sourceIndex + 1, clone) else profiles.add(clone)
+        saveProfiles()
+    }
     fun saveFavorites() = appStore.saveFavorites(favorites)
     fun saveTerminalSettings(settings: TerminalSettings) {
         terminalSettings = settings
@@ -290,7 +297,7 @@ private fun ClientSshApp(
                     editedProfile = it
                     showProfileEditor = true
                 },
-                onClone = {},
+                onClone = ::cloneProfile,
                 onDelete = {},
                 onConnect = { profile ->
                     if (sessionIsActive && session.profileId == profile.id) {
@@ -368,10 +375,8 @@ private fun ClientSshApp(
                 saveProfiles()
                 showProfileEditor = false
             },
-            onClone = { clone ->
-                profiles.add(clone)
-                saveProfiles()
-                editedProfile = clone
+            onClone = { source ->
+                cloneProfile(source)
                 showProfileEditor = false
             },
             onDelete = { profile ->
