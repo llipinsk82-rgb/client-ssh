@@ -14,10 +14,13 @@ jobs:
       github.head_ref == 'agent/0.3.6-host-key-verification'
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Guard exact v43 source
         shell: bash
@@ -25,7 +28,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = "llipinsk82-rgb/client-ssh"
           test "$GITHUB_HEAD_REF" = "agent/0.3.6-host-key-verification"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test "$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)" = "43"
           test "$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)" = "0.3.6"
           test -f .github/simplified-monitor-v43.trigger
@@ -117,7 +120,7 @@ jobs:
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
           mkdir -p signed-artifact
           cp "$APK" signed-artifact/Client-SSH-0.3.6-v43.apk
-          printf 'package=%s\nversionCode=%s\nversionName=%s\nsource=%s\n' "$ACTUAL_PACKAGE" "$ACTUAL_VERSION_CODE" "$ACTUAL_VERSION_NAME" "$GITHUB_SHA" > signed-artifact/APK_METADATA.txt
+          printf 'package=%s\nversionCode=%s\nversionName=%s\nsource=%s\n' "$ACTUAL_PACKAGE" "$ACTUAL_VERSION_CODE" "$ACTUAL_VERSION_NAME" "$SOURCE_SHA" > signed-artifact/APK_METADATA.txt
           printf '%s\n' "$ACTUAL_CERT" > signed-artifact/CERTIFICATE_SHA256.txt
           sha256sum signed-artifact/Client-SSH-0.3.6-v43.apk | tee signed-artifact/SHA256SUMS.txt
 
