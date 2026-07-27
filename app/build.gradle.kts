@@ -22,7 +22,7 @@ android {
         applicationId = "eu.blackserv.clientssh"
         minSdk = 26
         targetSdk = 36
-        versionCode = 43
+        versionCode = 44
         versionName = "0.3.6"
     }
 
