@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   signed-test:
-    if: github.repository == 'llipinsk82-rgb/client-ssh' && github.actor == 'llipinsk82-rgb'
+    if: github.repository == 'llipinsk82-rgb/client-ssh'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -21,6 +21,24 @@ jobs:
       EXPECTED_VERSION_NAME: '0.3.6'
       EXPECTED_PACKAGE: eu.blackserv.clientssh
     steps:
+      - name: Report guarded run start
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/agent/0.3.6-host-key-verification"
+          BODY=$(cat <<EOF
+          Podpisany test uproszczonego Monitora v43 wystartował.
+
+          - run_id: \`${GITHUB_RUN_ID}\`
+          - source: \`${GITHUB_SHA}\`
+          EOF
+          )
+          gh api --method POST \
+            repos/llipinsk82-rgb/client-ssh/issues/31/comments \
+            -f body="$BODY" >/dev/null
+
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -141,7 +159,7 @@ jobs:
           rm -f app/signing/client-ssh-release.jks
           rm -f "${RUNNER_TEMP}/client-ssh-release-storepass"
 
-      - name: Report guarded run to PR
+      - name: Report guarded run result
         if: success()
         shell: bash
         env:
