@@ -42,9 +42,33 @@ if [[ -n "$auto_host_key_trust_hits" ]]; then
   fail=1
 fi
 
+mapfile -t ssh_session_files < <(git grep -lF -- 'getSession(' -- app/src/main || true)
+for ssh_file in "${ssh_session_files[@]}"; do
+  if ! grep -Fq 'StrictHostKeyChecking' "$ssh_file"; then
+    echo "ERROR: sesja SSH nie ustawia StrictHostKeyChecking: $ssh_file" >&2
+    fail=1
+  fi
+
+  if ! grep -Fq 'setKnownHosts(' "$ssh_file" && ! grep -Fq 'hostKeyRepository =' "$ssh_file"; then
+    echo "ERROR: sesja SSH nie wskazuje magazynu known_hosts: $ssh_file" >&2
+    fail=1
+  fi
+
+  if grep -Fq 'setConfig("StrictHostKeyChecking", "yes")' "$ssh_file"; then
+    continue
+  fi
+
+  if grep -Eq 'const val [A-Za-z0-9_]*STRICT_HOST_KEY_CHECKING[[:space:]]*=[[:space:]]*"yes"' "$ssh_file"; then
+    continue
+  fi
+
+  echo "ERROR: sesja SSH nie wymusza StrictHostKeyChecking=yes: $ssh_file" >&2
+  fail=1
+done
+
 if ((fail != 0)); then
   echo "Przenieś materiał podpisujący do GitHub Actions Secrets i nie omijaj jawnej weryfikacji host key." >&2
   exit 1
 fi
 
-echo "OK: brak śledzonych kluczy/keystore, jawnych haseł podpisu i automatycznego zaufania host key."
+echo "OK: brak śledzonych kluczy/keystore, jawnych haseł podpisu; każda sesja SSH używa known_hosts i StrictHostKeyChecking=yes."
