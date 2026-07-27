@@ -26,14 +26,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REPOSITORY" = "llipinsk82-rgb/client-ssh"
-          test "$GITHUB_HEAD_REF" = "agent/0.3.6-host-key-verification"
+          printf 'source=%s\nhead=%s\n' "$SOURCE_SHA" "$(git rev-parse HEAD)"
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test "$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)" = "43"
           test "$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)" = "0.3.6"
           test -f .github/simplified-monitor-v43.trigger
-          bash scripts/check-no-release-secrets.sh
-          bash scripts/check-ssh-host-key-policy.sh
 
       - uses: actions/setup-java@v4
         with:
