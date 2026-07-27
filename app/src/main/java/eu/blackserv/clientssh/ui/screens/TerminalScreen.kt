@@ -76,6 +76,7 @@ private val TerminalPanel = Color(0xFF0B1410)
 private val TerminalButton = Color(0xFF16231B)
 private val TerminalGreen = Color(0xFF62D58A)
 private val TerminalText = Color(0xFFDCE9DF)
+private const val TERMINAL_BOTTOM_THRESHOLD_PX = 48
 
 private data class TerminalShortcut(
     val label: String,
@@ -86,6 +87,12 @@ private data class TerminalShortcut(
 internal fun terminalCompletionInput(command: String): String = command + "\t"
 
 internal fun terminalSubmitInput(command: String): String = command + "\n"
+
+internal fun shouldFollowTerminalOutputAfterUserScroll(
+    scrollValue: Int,
+    maxValue: Int,
+    thresholdPx: Int = TERMINAL_BOTTOM_THRESHOLD_PX,
+): Boolean = (maxValue - scrollValue).coerceAtLeast(0) <= thresholdPx
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,6 +117,7 @@ fun TerminalScreen(
     var command by remember { mutableStateOf("") }
     var showFavorites by remember { mutableStateOf(false) }
     var connectedOnce by remember(profile.id) { mutableStateOf(false) }
+    var followOutput by remember(profile.id) { mutableStateOf(true) }
     val clipboard = LocalClipboardManager.current
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
@@ -121,7 +129,20 @@ fun TerminalScreen(
     @Suppress("UNUSED_VARIABLE")
     val settingsSaver = onTerminalSettingsChange
 
-    LaunchedEffect(plainOutput.length) { verticalScroll.scrollTo(verticalScroll.maxValue) }
+    LaunchedEffect(verticalScroll.isScrollInProgress, verticalScroll.value, verticalScroll.maxValue) {
+        if (verticalScroll.isScrollInProgress) {
+            followOutput = shouldFollowTerminalOutputAfterUserScroll(
+                scrollValue = verticalScroll.value,
+                maxValue = verticalScroll.maxValue,
+            )
+        }
+    }
+    LaunchedEffect(plainOutput.length, followOutput) {
+        if (followOutput) {
+            delay(16)
+            verticalScroll.scrollTo(verticalScroll.maxValue)
+        }
+    }
     LaunchedEffect(fullscreen) { onFullscreenChange(fullscreen) }
     LaunchedEffect(terminalSettings.keepScreenAwake, controlsEnabled) {
         onKeepScreenAwakeChange(terminalSettings.keepScreenAwake && controlsEnabled)
@@ -235,26 +256,45 @@ fun TerminalScreen(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, _, zoom, _ ->
-                            terminalFontSize = (terminalFontSize.value * zoom).coerceIn(9f, 22f).sp
-                        }
-                    }
-                    .verticalScroll(verticalScroll)
-                    .then(
-                        if (wrapMode == TextWrapMode.NO_WRAP) Modifier.horizontalScroll(horizontalScroll)
-                        else Modifier,
-                    )
-                    .padding(10.dp),
+                    .fillMaxWidth(),
             ) {
-                SelectionContainer {
-                    Text(
-                        text = annotatedOutput,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = terminalFontSize,
-                        softWrap = wrapMode == TextWrapMode.WRAP,
-                    )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, _, zoom, _ ->
+                                terminalFontSize = (terminalFontSize.value * zoom).coerceIn(9f, 22f).sp
+                            }
+                        }
+                        .verticalScroll(verticalScroll)
+                        .then(
+                            if (wrapMode == TextWrapMode.NO_WRAP) Modifier.horizontalScroll(horizontalScroll)
+                            else Modifier,
+                        )
+                        .padding(10.dp),
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = annotatedOutput,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = terminalFontSize,
+                            softWrap = wrapMode == TextWrapMode.WRAP,
+                        )
+                    }
+                }
+
+                if (!followOutput) {
+                    Button(
+                        onClick = { followOutput = true },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = TerminalButton,
+                            contentColor = TerminalGreen,
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
+                    ) {
+                        Text("↓ Do dołu")
+                    }
                 }
             }
 
