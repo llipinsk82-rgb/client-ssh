@@ -1,0 +1,43 @@
+name: SSH host key policy
+
+on:
+  pull_request:
+    paths:
+      - 'app/src/main/**'
+      - 'scripts/check-no-release-secrets.sh'
+      - 'scripts/test-ssh-host-key-policy-guard.sh'
+      - '.github/workflows/ssh-host-key-policy.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/src/main/**'
+      - 'scripts/check-no-release-secrets.sh'
+      - 'scripts/test-ssh-host-key-policy-guard.sh'
+      - '.github/workflows/ssh-host-key-policy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ssh-host-key-policy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate guard scripts
+        shell: bash
+        run: |
+          bash -n scripts/check-no-release-secrets.sh
+          bash -n scripts/test-ssh-host-key-policy-guard.sh
+      - name: Verify current SSH transport policy
+        shell: bash
+        run: bash scripts/check-no-release-secrets.sh
+      - name: Verify unsafe policies are rejected
+        shell: bash
+        run: bash scripts/test-ssh-host-key-policy-guard.sh
