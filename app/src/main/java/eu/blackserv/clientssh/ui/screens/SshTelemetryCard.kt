@@ -39,7 +39,6 @@ private val MonitorPanel = Color(0xFF111B16)
 private val MonitorTile = Color(0xFF18241D)
 private val MonitorPrimaryText = Color(0xFFE7F4EB)
 private val MonitorSecondaryText = Color(0xFFA9B8AF)
-private val MonitorAccent = Color(0xFF62D58A)
 
 @Composable
 internal fun SshTelemetrySummary(
@@ -48,19 +47,12 @@ internal fun SshTelemetrySummary(
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(
-            "Zasoby VPS",
-            color = MonitorPrimaryText,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.titleMedium,
-        )
-
         when {
             record == null -> Text(
-                "Naciśnij „Sprawdź teraz”, aby pobrać pełny stan serwera.",
-                style = MaterialTheme.typography.bodySmall,
+                "Naciśnij „Sprawdź teraz”, aby pobrać stan serwera.",
+                style = MaterialTheme.typography.labelMedium,
                 color = MonitorSecondaryText,
             )
 
@@ -69,10 +61,11 @@ internal fun SshTelemetrySummary(
                     telemetryFailureLabel(record.failureKind),
                     color = MaterialTheme.colorScheme.error,
                     fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelLarge,
                 )
                 Text(
                     record.message,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MonitorSecondaryText,
                 )
                 TelemetryTimestamp(record.collectedAt)
@@ -91,10 +84,10 @@ private fun TelemetryMetricTiles(
     sample: SshTelemetrySample,
     tcpLatencyMs: Long?,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             MetricTile(
                 label = "CPU",
@@ -111,16 +104,16 @@ private fun TelemetryMetricTiles(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             MetricTile(
-                label = "LOAD 1/5/15",
-                value = "${formatDecimal(sample.load1)} / ${formatDecimal(sample.load5)} / ${formatDecimal(sample.load15)}",
+                label = "LOAD",
+                value = "${formatDecimal(sample.load1)}/${formatDecimal(sample.load5)}/${formatDecimal(sample.load15)}",
                 modifier = Modifier.weight(1f),
             )
             MetricTile(
-                label = "DYSK /",
-                value = "${sample.diskUsedPercent}% zajęte",
+                label = "DYSK",
+                value = "${sample.diskUsedPercent}%",
                 detail = "${formatBytesFromKb(sample.diskAvailableKb)} wolne",
                 modifier = Modifier.weight(1f),
             )
@@ -128,7 +121,7 @@ private fun TelemetryMetricTiles(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             MetricTile(
                 label = "UPTIME",
@@ -136,7 +129,7 @@ private fun TelemetryMetricTiles(
                 modifier = Modifier.weight(1f),
             )
             MetricTile(
-                label = "POŁĄCZENIE",
+                label = "PING",
                 value = tcpLatencyMs?.let { "TCP ${it} ms" } ?: "TCP —",
                 detail = compactIcmpLabel(sample.pingStatus, sample.pingMs),
                 modifier = Modifier.weight(1f),
@@ -144,9 +137,8 @@ private fun TelemetryMetricTiles(
         }
 
         MetricTile(
-            label = "SIEĆ VPS",
-            value = "↓ ${formatRate(sample.networkRxBytesPerSecond)}",
-            detail = "↑ ${formatRate(sample.networkTxBytesPerSecond)}",
+            label = "SIEĆ",
+            value = "↓ ${formatRate(sample.networkRxBytesPerSecond)}   ↑ ${formatRate(sample.networkTxBytesPerSecond)}",
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -164,26 +156,32 @@ private fun MetricTile(
         colors = CardDefaults.cardColors(containerColor = MonitorTile),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 5.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MonitorSecondaryText,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                value,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MonitorPrimaryText,
-                fontWeight = FontWeight.Bold,
-            )
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MonitorSecondaryText,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                Text(
+                    value,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MonitorPrimaryText,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
             detail?.takeIf(String::isNotBlank)?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.labelSmall,
                     color = MonitorSecondaryText,
+                    maxLines = 1,
                 )
             }
         }
@@ -208,8 +206,8 @@ internal fun SshTelemetryAdvancedSettings(
         colors = CardDefaults.cardColors(containerColor = MonitorPanel),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
                 "Diagnostyka sieci",
@@ -238,7 +236,7 @@ internal fun SshTelemetryAdvancedSettings(
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        "Opcjonalny test wykonywany z VPS. TCP z telefonu jest mierzony zawsze.",
+                        "Test z VPS. TCP z telefonu jest mierzony zawsze.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MonitorSecondaryText,
                     )
@@ -275,7 +273,7 @@ internal fun SshTelemetryAdvancedSettings(
                     supportingText = {
                         Text(
                             if (pingTargetValid) {
-                                "IPv4 lub nazwa DNS, np. 1.1.1.1"
+                                "IPv4 lub DNS, np. 1.1.1.1"
                             } else {
                                 "Nieprawidłowy albo niebezpieczny cel."
                             },
@@ -312,9 +310,10 @@ internal fun configForFullManualCheck(
 @Composable
 private fun TelemetryTimestamp(timestamp: Long) {
     Text(
-        "Aktualizacja: ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(timestamp))}",
+        "Pomiar: ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(timestamp))}",
         style = MaterialTheme.typography.labelSmall,
         color = MonitorSecondaryText,
+        maxLines = 1,
     )
 }
 
