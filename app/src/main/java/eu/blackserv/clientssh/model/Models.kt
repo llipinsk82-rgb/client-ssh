@@ -16,19 +16,50 @@ enum class AuthenticationMethod(val label: String) {
 enum class AppSkin(
     val label: String,
     val description: String,
+    val selectable: Boolean,
 ) {
+    SAPPHIRE(
+        label = "Sapphire",
+        description = "Oficjalny niebieski motyw Client SSH.",
+        selectable = true,
+    ),
+    AURORA(
+        label = "Aurora",
+        description = "Turkusowy motyw premium inspirowany zorzą.",
+        selectable = true,
+    ),
+    OBSIDIAN(
+        label = "Obsidian",
+        description = "Ciemny grafitowo-fioletowy motyw premium.",
+        selectable = true,
+    ),
+
+    // Zachowane wyłącznie do bezpiecznej migracji wcześniejszych preferencji.
+    // Nie są pokazywane w ustawieniach i zawsze renderują Sapphire.
     GRAPHITE(
-        label = "BlackServ Premium",
-        description = "Pełny graficzny command center: szkło, głębia, sieć i światło w całej aplikacji.",
+        label = "Legacy Graphite",
+        description = "Starszy zapis motywu — automatycznie używa Sapphire.",
+        selectable = false,
     ),
     NEON(
-        label = "BlackServ Premium Neon",
-        description = "Wysoki kontrast premium z mocniejszym cyanem i kobaltowym światłem.",
-    ),
+        label = "Legacy Neon",
+        description = "Starszy zapis motywu — automatycznie używa Sapphire.",
+        selectable = false,
+    );
+
+    val canonical: AppSkin
+        get() = when (this) {
+            GRAPHITE, NEON -> SAPPHIRE
+            else -> this
+        }
+
+    companion object {
+        val selectableEntries: List<AppSkin> = entries.filter { it.selectable }
+    }
 }
 
 data class AppSettings(
-    val skin: AppSkin = AppSkin.GRAPHITE,
+    val skin: AppSkin = AppSkin.SAPPHIRE,
 )
 
 data class HostProfile(
