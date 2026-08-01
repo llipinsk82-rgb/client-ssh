@@ -12,15 +12,12 @@ on:
         required: false
         default: "Client SSH update"
         type: string
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: write
 
 concurrency:
-  group: publish-client-ssh-ota-${{ github.event.inputs.tag || github.ref_name }}
+  group: publish-client-ssh-ota-${{ github.event.inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -28,12 +25,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+      TAG_NAME: ${{ github.event.inputs.tag }}
       RELEASE_NOTES: ${{ github.event.inputs.notes || 'Client SSH update' }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Require trusted main branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
 
       - name: Reject committed signing secrets
         shell: bash
@@ -151,7 +154,6 @@ jobs:
           sha256sum "$APK_PATH" > "$SHA_PATH"
           printf 'apk_path=%s\n' "$APK_PATH" >> "$GITHUB_OUTPUT"
           printf 'sha_path=%s\n' "$SHA_PATH" >> "$GITHUB_OUTPUT"
-          printf 'apk_name=%s\n' "$APK_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release for OTA
         shell: bash
