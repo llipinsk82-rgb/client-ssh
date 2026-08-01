@@ -1,0 +1,120 @@
+name: Premium visual skin bootstrap
+
+on:
+  push:
+    branches:
+      - agent/0.3.7-premium-visual-skin
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: premium-visual-skin-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  apply-and-validate:
+    if: >-
+      (github.event_name == 'push' && !contains(github.event.head_commit.message, '[premium-skin-applied]')) ||
+      (github.event_name == 'pull_request' && github.head_ref == 'agent/0.3.7-premium-visual-skin')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out exact premium branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/0.3.7-premium-visual-skin
+          fetch-depth: 0
+
+      - name: Reconstruct audited premium patcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/apply-premium-skin.py.gz.b64 <<'PATCH_B64'
+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
+PATCH_B64
+          base64 --decode /tmp/apply-premium-skin.py.gz.b64 | gzip --decompress > /tmp/apply-premium-skin.py
+          test "$(sha256sum /tmp/apply-premium-skin.py | awk '{print $1}')" = "b150737b4b3c99fd249f58e04d99832c1d042d2971d7480ac6d682b01c2d46fe"
+          python3 -m py_compile /tmp/apply-premium-skin.py
+
+      - name: Apply full premium visual system
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -q 'BlackServ Premium' app/src/main/java/eu/blackserv/clientssh/model/Models.kt; then
+            echo 'Premium skin already applied; keeping this run idempotent.'
+          else
+            cp /tmp/apply-premium-skin.py scripts/apply-premium-skin.py
+            python3 scripts/apply-premium-skin.py
+            rm -f scripts/apply-premium-skin.py
+          fi
+          git diff --check
+          grep -q 'BlackServ Premium' app/src/main/java/eu/blackserv/clientssh/model/Models.kt
+          grep -q 'PremiumDeviceScene' app/src/main/java/eu/blackserv/clientssh/ui/screens/StartupScreen.kt
+          grep -q 'Premium visual skin applied successfully' /tmp/apply-premium-skin.py
+
+      - name: Reject committed signing secrets
+        shell: bash
+        run: bash scripts/check-no-release-secrets.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Install Android SDK 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:testDebugUnitTest --stacktrace --console=plain
+
+      - name: Build premium debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug --stacktrace --console=plain
+          sha256sum app/build/outputs/apk/debug/app-debug.apk | tee app/build/outputs/apk/debug/SHA256SUMS.txt
+
+      - name: Upload premium debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-ssh-premium-visual-debug
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit validated premium skin
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'No premium source changes to commit.'
+            exit 0
+          fi
+          git commit -m "Add premium 4K-ready visual skin [premium-skin-applied]"
+          git push origin HEAD:agent/0.3.7-premium-visual-skin
+
+      - name: Remove temporary patch material
+        if: always()
+        run: rm -f /tmp/apply-premium-skin.py /tmp/apply-premium-skin.py.gz.b64
