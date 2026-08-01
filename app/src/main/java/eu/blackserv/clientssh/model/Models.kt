@@ -18,12 +18,12 @@ enum class AppSkin(
     val description: String,
 ) {
     GRAPHITE(
-        label = "BlackServ Classic",
-        description = "Prosty, spokojny i czytelny wygląd do codziennej pracy.",
+        label = "BlackServ Premium",
+        description = "Pełny graficzny command center: szkło, głębia, sieć i światło w całej aplikacji.",
     ),
     NEON(
-        label = "BlackServ Neon",
-        description = "Ciemniejszy wygląd z mocniejszą zielenią, cyanem i efektem command deck.",
+        label = "BlackServ Premium Neon",
+        description = "Wysoki kontrast premium z mocniejszym cyanem i kobaltowym światłem.",
     ),
 }
 
