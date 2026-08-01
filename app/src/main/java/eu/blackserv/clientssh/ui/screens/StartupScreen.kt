@@ -24,14 +24,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 
-private val SPLASH_ASSETS = (0..7).map { index ->
-    "client_ssh_splash_4k_${index.toString().padStart(2, '0')}.b64"
+private val SPLASH_ASSETS = (0..2).map { index ->
+    "client_ssh_splash_hd_${index.toString().padStart(2, '0')}.b64"
 }
 
 /**
- * Oficjalny Sapphire splash jest prawdziwym assetem 2160 x 3840 WebP.
- * Nie jest odtwarzany z prostych figur Compose, dzięki czemu zachowuje dokładnie
- * zatwierdzony premium look zamiast wcześniejszego płaskiego efektu.
+ * Oficjalny Sapphire splash używa zatwierdzonej grafiki rastrowej przygotowanej
+ * z mastera 4K. Nie jest odtwarzany z prostych figur Compose, dzięki czemu
+ * zachowuje dokładny premium look zamiast wcześniejszego płaskiego efektu.
  */
 @Composable
 fun StartupScreen(onFinished: () -> Unit) {
