@@ -1,0 +1,181 @@
+name: Publish Client SSH OTA
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.3.7"
+        required: true
+        type: string
+      notes:
+        description: "Short release notes shown by the in-app updater"
+        required: false
+        default: "Client SSH update"
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-client-ssh-ota-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+      RELEASE_NOTES: ${{ github.event.inputs.notes || 'Client SSH update' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Reject committed signing secrets
+        shell: bash
+        run: bash scripts/check-no-release-secrets.sh
+
+      - name: Validate release metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_VERSION="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
+          VERSION_CODE="$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)"
+          test -n "$APP_VERSION"
+          test -n "$VERSION_CODE"
+          test "$TAG_NAME" = "v$APP_VERSION"
+          printf 'app_version=%s\n' "$APP_VERSION" >> "$GITHUB_OUTPUT"
+          printf 'version_code=%s\n' "$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Validate signing secrets
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+          CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
+          CLIENT_SSH_RELEASE_CERT_SHA256: ${{ secrets.CLIENT_SSH_RELEASE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          test -n "$CLIENT_SSH_RELEASE_KEYSTORE_B64"
+          test -n "$CLIENT_SSH_RELEASE_STORE_PASSWORD"
+          test -n "$CLIENT_SSH_RELEASE_KEY_ALIAS"
+          test -n "$CLIENT_SSH_RELEASE_KEY_PASSWORD"
+          test -n "$CLIENT_SSH_RELEASE_CERT_SHA256"
+
+      - name: Restore stable Client SSH release key
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_KEYSTORE_B64: ${{ secrets.CLIENT_SSH_RELEASE_KEYSTORE_B64 }}
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          mkdir -p app/signing
+          printf '%s' "$CLIENT_SSH_RELEASE_KEYSTORE_B64" | base64 --decode > app/signing/client-ssh-release.jks
+          chmod 600 app/signing/client-ssh-release.jks
+          STOREPASS_FILE="${RUNNER_TEMP}/client-ssh-release-storepass"
+          printf '%s\n' "$CLIENT_SSH_RELEASE_STORE_PASSWORD" > "$STOREPASS_FILE"
+          chmod 600 "$STOREPASS_FILE"
+          keytool -list \
+            -keystore app/signing/client-ssh-release.jks \
+            -storepass:file "$STOREPASS_FILE" \
+            -alias "$CLIENT_SSH_RELEASE_KEY_ALIAS" >/dev/null
+
+      - name: Run unit tests
+        shell: bash
+        run: gradle :app:testDebugUnitTest --stacktrace --console=plain
+
+      - name: Build signed release APK
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_STORE_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_STORE_PASSWORD }}
+          CLIENT_SSH_RELEASE_KEY_ALIAS: ${{ secrets.CLIENT_SSH_RELEASE_KEY_ALIAS }}
+          CLIENT_SSH_RELEASE_KEY_PASSWORD: ${{ secrets.CLIENT_SSH_RELEASE_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --stacktrace --console=plain
+
+      - name: Verify package, version and signing certificate
+        id: package
+        shell: bash
+        env:
+          CLIENT_SSH_RELEASE_CERT_SHA256: ${{ secrets.CLIENT_SSH_RELEASE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          SOURCE_APK="app/build/outputs/apk/release/app-release.apk"
+          APP_VERSION="${{ steps.metadata.outputs.app_version }}"
+          VERSION_CODE="${{ steps.metadata.outputs.version_code }}"
+          RELEASE_DIR="app/build/outputs/ota"
+          APK_NAME="client-ssh-${APP_VERSION}.apk"
+          APK_PATH="$RELEASE_DIR/$APK_NAME"
+          mkdir -p "$RELEASE_DIR"
+          cp "$SOURCE_APK" "$APK_PATH"
+
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          BADGING="$($AAPT dump badging "$APK_PATH" | head -n 1)"
+          ACTUAL_PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+          ACTUAL_VERSION_CODE="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionCode='\([^']*\)'.*/\1/p")"
+          ACTUAL_VERSION_NAME="$(printf '%s\n' "$BADGING" | sed -n "s/.* versionName='\([^']*\)'.*/\1/p")"
+          test "$ACTUAL_PACKAGE" = "eu.blackserv.clientssh"
+          test "$ACTUAL_VERSION_CODE" = "$VERSION_CODE"
+          test "$ACTUAL_VERSION_NAME" = "$APP_VERSION"
+
+          ACTUAL_CERT="$($APKSIGNER verify --verbose --print-certs "$APK_PATH" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          EXPECTED_CERT="$(printf '%s' "$CLIENT_SSH_RELEASE_CERT_SHA256" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          test -n "$ACTUAL_CERT"
+          test "$ACTUAL_CERT" = "$EXPECTED_CERT"
+
+          SHA_PATH="$APK_PATH.sha256"
+          sha256sum "$APK_PATH" > "$SHA_PATH"
+          printf 'apk_path=%s\n' "$APK_PATH" >> "$GITHUB_OUTPUT"
+          printf 'sha_path=%s\n' "$SHA_PATH" >> "$GITHUB_OUTPUT"
+          printf 'apk_name=%s\n' "$APK_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release for OTA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK_PATH="${{ steps.package.outputs.apk_path }}"
+          SHA_PATH="${{ steps.package.outputs.sha_path }}"
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists; refusing to overwrite it." >&2
+            exit 1
+          fi
+          gh release create "$TAG_NAME" \
+            "$APK_PATH" \
+            "$SHA_PATH" \
+            --target "$GITHUB_SHA" \
+            --title "Client SSH ${{ steps.metadata.outputs.app_version }}" \
+            --notes "$RELEASE_NOTES" \
+            --latest
+
+      - name: Remove signing key
+        if: always()
+        shell: bash
+        run: |
+          rm -f app/signing/client-ssh-release.jks
+          rm -f "${RUNNER_TEMP}/client-ssh-release-storepass"
