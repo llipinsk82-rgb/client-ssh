@@ -24,7 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 
-private val SPLASH_ASSETS = (0..7).map { index ->
+private val SPLASH_ASSETS = (0..15).map { index ->
     "client_ssh_splash_4k_${index.toString().padStart(2, '0')}.b64"
 }
 
