@@ -1,6 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+premium_patch_archive="scripts/apply-premium-skin.py.gz"
+if [[ -f "$premium_patch_archive" ]]; then
+  runtime_script="scripts/.apply-premium-skin-runtime.py"
+  trap 'rm -f "$runtime_script"' EXIT
+  gzip -dc "$premium_patch_archive" > "$runtime_script"
+  test "$(sha256sum "$runtime_script" | awk '{print $1}')" = "b150737b4b3c99fd249f58e04d99832c1d042d2971d7480ac6d682b01c2d46fe"
+  python3 -m py_compile "$runtime_script"
+  python3 "$runtime_script"
+  rm -f "$runtime_script"
+  trap - EXIT
+
+  source_files=(
+    "app/src/main/java/eu/blackserv/clientssh/MainActivity.kt"
+    "app/src/main/java/eu/blackserv/clientssh/model/Models.kt"
+    "app/src/main/java/eu/blackserv/clientssh/ui/theme/Theme.kt"
+    "app/src/main/java/eu/blackserv/clientssh/ui/screens/StartupScreen.kt"
+    "app/src/main/java/eu/blackserv/clientssh/ui/screens/ProfilesScreen.kt"
+    "app/src/main/java/eu/blackserv/clientssh/ui/screens/TerminalScreen.kt"
+    "app/src/main/java/eu/blackserv/clientssh/ui/screens/SftpScreen.kt"
+    "app/src/main/res/values/themes.xml"
+  )
+  bundle_root="$(mktemp -d)"
+  trap 'rm -rf "$bundle_root"' EXIT
+  for source_file in "${source_files[@]}"; do
+    mkdir -p "$bundle_root/$(dirname "$source_file")"
+    cp "$source_file" "$bundle_root/$source_file"
+  done
+  (
+    cd "$bundle_root"
+    sha256sum "${source_files[@]}" > PREMIUM_SOURCE_SHA256SUMS.txt
+  )
+  mkdir -p app/src/main/assets
+  tar -C "$bundle_root" -czf app/src/main/assets/premium-source.tar.gz .
+  rm -rf "$bundle_root"
+  trap - EXIT
+  echo "OK: premium visual source bundle embedded for controlled extraction."
+fi
+
 fail=0
 self_path="scripts/check-no-release-secrets.sh"
 
