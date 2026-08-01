@@ -1,41 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-v47_patch_archive="scripts/v47-patch-r2.tar.gz"
-v47_marker="app/src/main/java/eu/blackserv/clientssh/terminal/TerminalSessionLogStore.kt"
-if [[ -f "$v47_patch_archive" && ! -f "$v47_marker" ]]; then
-  patch_root="$(mktemp -d)"
-  source_root="$(mktemp -d)"
-  trap 'rm -rf "$patch_root" "$source_root"' EXIT
-
-  test "$(sha256sum "$v47_patch_archive" | awk '{print $1}')" = "e3484d4fd2a73dd9f19341be24389077e8198c26de1509268a3df128b4078431"
-  tar -xzf "$v47_patch_archive" -C "$patch_root"
-  python3 -m py_compile "$patch_root/apply-full-log-v47.py"
-  python3 "$patch_root/apply-full-log-v47.py" .
-  git diff --check
-
-  source_files=(
-    "app/build.gradle.kts"
-    "app/src/main/java/eu/blackserv/clientssh/MainActivity.kt"
-    "app/src/main/java/eu/blackserv/clientssh/service/TerminalSessionService.kt"
-    "app/src/main/java/eu/blackserv/clientssh/terminal/TerminalSessionBus.kt"
-    "app/src/main/java/eu/blackserv/clientssh/terminal/TerminalSessionLogStore.kt"
-    "app/src/main/java/eu/blackserv/clientssh/ui/screens/TerminalScreen.kt"
-    "app/src/test/java/eu/blackserv/clientssh/terminal/TerminalSessionLogStoreTest.kt"
-  )
-  for source_file in "${source_files[@]}"; do
-    mkdir -p "$source_root/$(dirname "$source_file")"
-    cp "$source_file" "$source_root/$source_file"
-  done
-  (
-    cd "$source_root"
-    sha256sum "${source_files[@]}" > V47_SOURCE_SHA256SUMS.txt
-  )
-  mkdir -p app/src/main/assets
-  tar -C "$source_root" -czf app/src/main/assets/v47-source.tar.gz .
-  echo "OK: v47 full streaming log applied and exact source bundle embedded for controlled extraction."
-fi
-
 fail=0
 self_path="scripts/check-no-release-secrets.sh"
 

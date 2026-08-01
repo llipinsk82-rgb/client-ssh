@@ -105,7 +105,7 @@ fun TerminalScreen(
     onDeleteFavorite: (FavoriteCommand) -> Unit,
     onMoveFavoriteUp: (FavoriteCommand) -> Unit,
     onMoveFavoriteDown: (FavoriteCommand) -> Unit,
-    onSaveLog: (String, String) -> Unit,
+    onSaveLog: (String, String?, String) -> Unit,
     onClose: () -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
     onKeepScreenAwakeChange: (Boolean) -> Unit,
@@ -230,8 +230,12 @@ fun TerminalScreen(
                         IconButton(onClick = { clipboard.setText(AnnotatedString(plainOutput)) }) {
                             Icon(Icons.Default.ContentCopy, contentDescription = "Kopiuj bufor")
                         }
-                        IconButton(onClick = { onSaveLog("${profile.name}.log", plainOutput) }) {
-                            Icon(Icons.Default.Save, contentDescription = "Zapisz log")
+                        IconButton(
+                            onClick = {
+                                onSaveLog("${profile.name}.log", session.fullLogPath, plainOutput)
+                            },
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = "Zapisz pełny log")
                         }
                         IconButton(onClick = { fullscreen = true }) {
                             Icon(Icons.Default.Fullscreen, contentDescription = "Pełny ekran")

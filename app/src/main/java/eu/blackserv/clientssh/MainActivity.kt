@@ -54,6 +54,7 @@ import eu.blackserv.clientssh.storage.LocalAppStore
 import eu.blackserv.clientssh.terminal.PendingSessionRegistry
 import eu.blackserv.clientssh.terminal.TerminalConnectionState
 import eu.blackserv.clientssh.terminal.TerminalSessionBus
+import eu.blackserv.clientssh.terminal.TerminalSessionLogStore
 import eu.blackserv.clientssh.ui.screens.HealthMonitorScreen
 import eu.blackserv.clientssh.ui.screens.HistoryScreen
 import eu.blackserv.clientssh.ui.screens.HostKeyTrustDialog
@@ -68,19 +69,27 @@ import eu.blackserv.clientssh.ui.theme.AppBackdrop
 import eu.blackserv.clientssh.ui.theme.ClientSshTheme
 import eu.blackserv.clientssh.ui.theme.LocalAppSkin
 import kotlinx.coroutines.flow.MutableStateFlow
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private var pendingLogContent: String = ""
+    private var pendingLogSource: File? = null
     private val openActiveTerminalRequest = MutableStateFlow(0L)
 
     private val saveLogLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain"),
     ) { uri ->
         if (uri != null) {
-            contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
-                writer.write(pendingLogContent)
+            contentResolver.openOutputStream(uri)?.use { output ->
+                val source = pendingLogSource
+                if (source != null && source.isFile) {
+                    source.inputStream().buffered().use { input -> input.copyTo(output) }
+                } else {
+                    output.write(pendingLogContent.toByteArray(Charsets.UTF_8))
+                }
             }
         }
+        pendingLogSource = null
         pendingLogContent = ""
     }
 
@@ -120,8 +129,12 @@ class MainActivity : ComponentActivity() {
                         onSessionStopped = ::stopSessionService,
                         onFullscreenChange = ::setFullscreen,
                         onKeepScreenAwakeChange = ::setKeepScreenAwake,
-                        onSaveLog = { filename, content ->
-                            pendingLogContent = content
+                        onSaveLog = { filename, sourcePath, fallbackContent ->
+                            pendingLogSource = TerminalSessionLogStore.resolveForExport(
+                                File(noBackupFilesDir, TerminalSessionLogStore.DIRECTORY_NAME),
+                                sourcePath,
+                            )
+                            pendingLogContent = if (pendingLogSource == null) fallbackContent else ""
                             saveLogLauncher.launch(filename.sanitizeFilename())
                         },
                     )
@@ -203,7 +216,7 @@ private fun ClientSshApp(
     onSessionStopped: () -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
     onKeepScreenAwakeChange: (Boolean) -> Unit,
-    onSaveLog: (String, String) -> Unit,
+    onSaveLog: (String, String?, String) -> Unit,
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
