@@ -2,7 +2,8 @@
 set -euo pipefail
 
 premium_patch_archive="scripts/apply-premium-skin.py.gz"
-if [[ -f "$premium_patch_archive" ]]; then
+premium_marker='label = "BlackServ Premium"'
+if [[ -f "$premium_patch_archive" ]] && ! grep -Fq "$premium_marker" app/src/main/java/eu/blackserv/clientssh/model/Models.kt; then
   runtime_script="scripts/.apply-premium-skin-runtime.py"
   trap 'rm -f "$runtime_script"' EXIT
   gzip -dc "$premium_patch_archive" > "$runtime_script"
