@@ -4,11 +4,14 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import eu.blackserv.clientssh.health.HealthCheckDiagnosticsRepository
+import eu.blackserv.clientssh.health.HealthCheckHistoryRepository
 import eu.blackserv.clientssh.health.HealthCheckRepository
 import eu.blackserv.clientssh.health.HealthMonitorConfigRepository
 import eu.blackserv.clientssh.health.HealthMonitorController
 import eu.blackserv.clientssh.health.HealthMonitorScheduler
 import eu.blackserv.clientssh.health.SharedPreferencesHealthCheckStorage
+import eu.blackserv.clientssh.health.SshTelemetryRepository
 import eu.blackserv.clientssh.model.AppSettings
 import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.AuthenticationMethod
@@ -41,6 +44,24 @@ class LocalAppStore(context: Context) {
                 SharedPreferencesHealthCheckStorage(appContext),
             ),
             scheduler = HealthMonitorScheduler(appContext),
+            historyRepository = HealthCheckHistoryRepository(
+                SharedPreferencesHealthCheckStorage(
+                    context = appContext,
+                    valueKey = SharedPreferencesHealthCheckStorage.HISTORY_VALUE_KEY,
+                ),
+            ),
+            diagnosticsRepository = HealthCheckDiagnosticsRepository(
+                SharedPreferencesHealthCheckStorage(
+                    context = appContext,
+                    valueKey = SharedPreferencesHealthCheckStorage.DIAGNOSTICS_VALUE_KEY,
+                ),
+            ),
+            telemetryRepository = SshTelemetryRepository(
+                SharedPreferencesHealthCheckStorage(
+                    context = appContext,
+                    valueKey = SharedPreferencesHealthCheckStorage.SSH_TELEMETRY_HISTORY_VALUE_KEY,
+                ),
+            ),
         )
     }
 

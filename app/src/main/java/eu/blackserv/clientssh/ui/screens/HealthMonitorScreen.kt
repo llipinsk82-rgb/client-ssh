@@ -55,10 +55,14 @@ import eu.blackserv.clientssh.health.HealthCheckSnapshot
 import eu.blackserv.clientssh.health.HealthMonitorConfig
 import eu.blackserv.clientssh.health.HealthMonitorConfigRepository
 import eu.blackserv.clientssh.health.HealthMonitorController
+import eu.blackserv.clientssh.health.HealthMonitorRunExecutor
 import eu.blackserv.clientssh.health.HealthMonitorScheduler
 import eu.blackserv.clientssh.health.HealthStatus
-import eu.blackserv.clientssh.health.HealthTarget
+import eu.blackserv.clientssh.health.JschSshTelemetryTransport
 import eu.blackserv.clientssh.health.SharedPreferencesHealthCheckStorage
+import eu.blackserv.clientssh.health.SshTelemetryCollector
+import eu.blackserv.clientssh.health.SshTelemetryRecord
+import eu.blackserv.clientssh.health.SshTelemetryRepository
 import eu.blackserv.clientssh.health.TcpHealthProbe
 import eu.blackserv.clientssh.model.HostProfile
 import java.text.DateFormat
@@ -101,21 +105,43 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
             ),
         )
     }
+    val telemetryRepository = remember(appContext) {
+        SshTelemetryRepository(
+            SharedPreferencesHealthCheckStorage(
+                context = appContext,
+                valueKey = SharedPreferencesHealthCheckStorage.SSH_TELEMETRY_HISTORY_VALUE_KEY,
+            ),
+        )
+    }
     val scheduler = remember(appContext) { HealthMonitorScheduler(appContext) }
-    val controller = remember(configRepository, snapshotRepository, scheduler, historyRepository, diagnosticsRepository) {
+    val controller = remember(
+        configRepository,
+        snapshotRepository,
+        scheduler,
+        historyRepository,
+        diagnosticsRepository,
+        telemetryRepository,
+    ) {
         HealthMonitorController(
             configRepository = configRepository,
             snapshotRepository = snapshotRepository,
             scheduler = scheduler,
             historyRepository = historyRepository,
             diagnosticsRepository = diagnosticsRepository,
+            telemetryRepository = telemetryRepository,
         )
     }
-    val executor = remember(snapshotRepository, historyRepository) {
-        HealthCheckExecutor(
-            snapshotRepository = snapshotRepository,
-            probe = TcpHealthProbe(),
-            historyRepository = historyRepository,
+    val runExecutor = remember(snapshotRepository, historyRepository, telemetryRepository, appContext) {
+        HealthMonitorRunExecutor(
+            healthExecutor = HealthCheckExecutor(
+                snapshotRepository = snapshotRepository,
+                probe = TcpHealthProbe(),
+                historyRepository = historyRepository,
+            ),
+            telemetryCollector = SshTelemetryCollector(
+                JschSshTelemetryTransport(appContext),
+            ),
+            telemetryRepository = telemetryRepository,
         )
     }
 
@@ -126,6 +152,9 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
     }
     var diagnostics by remember(profiles) {
         mutableStateOf(diagnosticsRepository.getAll().associateBy { it.profileId })
+    }
+    var telemetryRecords by remember(profiles) {
+        mutableStateOf(telemetryRepository.latestAll().associateBy { it.profileId })
     }
     var checkingProfileIds by remember { mutableStateOf(emptySet<String>()) }
     var testingWorkerProfileIds by remember { mutableStateOf(emptySet<String>()) }
@@ -149,6 +178,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
         snapshots = snapshotRepository.getAll().associateBy { it.profileId }
         histories = profiles.associate { it.id to historyRepository.get(it.id) }
         diagnostics = diagnosticsRepository.getAll().associateBy { it.profileId }
+        telemetryRecords = telemetryRepository.latestAll().associateBy { it.profileId }
     }
 
     RefreshOnResume {
@@ -173,15 +203,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
         scope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    executor.execute(
-                        profileId = profile.id,
-                        target = HealthTarget(
-                            host = profile.host,
-                            port = profile.port,
-                            timeoutMs = config.timeoutMs,
-                        ),
-                        offlineFailureThreshold = config.offlineFailureThreshold,
-                    )
+                    runExecutor.execute(profile = profile, config = config)
                 }
                 refresh()
             } finally {
@@ -224,7 +246,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
                     Column {
                         Text("Health Monitor", fontWeight = FontWeight.Bold)
                         Text(
-                            "TCP health check bez otwierania terminala",
+                            "TCP availability + opcjonalna telemetria SSH",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -243,7 +265,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
             ) {
                 Text("Brak profili do monitorowania", fontWeight = FontWeight.Bold)
                 Text(
-                    "Dodaj profil serwera, aby włączyć cykliczny test TCP.",
+                    "Dodaj profil serwera, aby włączyć cykliczny test TCP i opcjonalną telemetrię SSH.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -264,18 +286,26 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
                 }
                 items(profiles, key = { it.id }) { profile ->
                     val config = configs[profile.id] ?: HealthMonitorConfig(profileId = profile.id)
-                    HealthProfileCard(
-                        profile = profile,
-                        config = config,
-                        snapshot = snapshots[profile.id],
-                        history = histories[profile.id].orEmpty(),
-                        diagnostic = diagnostics[profile.id],
-                        checking = profile.id in checkingProfileIds,
-                        testingWorker = profile.id in testingWorkerProfileIds,
-                        onSave = ::save,
-                        onCheckNow = { checkNow(profile, config) },
-                        onTestWorkerNow = { testWorkerNow(profile.id) },
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        HealthProfileCard(
+                            profile = profile,
+                            config = config,
+                            snapshot = snapshots[profile.id],
+                            history = histories[profile.id].orEmpty(),
+                            diagnostic = diagnostics[profile.id],
+                            checking = profile.id in checkingProfileIds,
+                            testingWorker = profile.id in testingWorkerProfileIds,
+                            onSave = ::save,
+                            onCheckNow = { checkNow(profile, config) },
+                            onTestWorkerNow = { testWorkerNow(profile.id) },
+                        )
+                        SshTelemetryCard(
+                            profile = profile,
+                            config = config,
+                            record = telemetryRecords[profile.id],
+                            onSave = ::save,
+                        )
+                    }
                 }
             }
         }

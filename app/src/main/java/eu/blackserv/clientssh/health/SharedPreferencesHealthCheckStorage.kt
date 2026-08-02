@@ -27,5 +27,6 @@ class SharedPreferencesHealthCheckStorage(
         const val CONFIG_VALUE_KEY = "config_v1"
         const val HISTORY_VALUE_KEY = "history_v1"
         const val DIAGNOSTICS_VALUE_KEY = "diagnostics_v1"
+        const val SSH_TELEMETRY_HISTORY_VALUE_KEY = "ssh_telemetry_history_v1"
     }
 }

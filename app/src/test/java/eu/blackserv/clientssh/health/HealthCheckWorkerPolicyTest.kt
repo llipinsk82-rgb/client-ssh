@@ -31,4 +31,14 @@ class HealthCheckWorkerPolicyTest {
             healthWorkerFailureDecision(-1)
         }
     }
+
+    @Test
+    fun `unexpected worker detail never exposes exception message`() {
+        val marker = "worker-sensitive-marker"
+
+        val detail = healthWorkerSafeFailureDetail(IllegalStateException(marker))
+
+        assertFalse(detail.contains(marker))
+        assertTrue(detail.contains("IllegalStateException"))
+    }
 }

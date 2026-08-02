@@ -57,38 +57,45 @@ class HealthCheckWorker(
                     valueKey = SharedPreferencesHealthCheckStorage.HISTORY_VALUE_KEY,
                 ),
             )
-            val transition = HealthCheckExecutor(
-                snapshotRepository = snapshotRepository,
-                probe = TcpHealthProbe(),
-                historyRepository = historyRepository,
-            ).execute(
-                profileId = profileId,
-                target = HealthTarget(
-                    host = profile.host,
-                    port = profile.port,
-                    timeoutMs = config.timeoutMs,
+            val telemetryRepository = SshTelemetryRepository(
+                SharedPreferencesHealthCheckStorage(
+                    context = applicationContext,
+                    valueKey = SharedPreferencesHealthCheckStorage.SSH_TELEMETRY_HISTORY_VALUE_KEY,
                 ),
-                offlineFailureThreshold = config.offlineFailureThreshold,
+            )
+            val run = HealthMonitorRunExecutor(
+                healthExecutor = HealthCheckExecutor(
+                    snapshotRepository = snapshotRepository,
+                    probe = TcpHealthProbe(),
+                    historyRepository = historyRepository,
+                ),
+                telemetryCollector = SshTelemetryCollector(
+                    JschSshTelemetryTransport(applicationContext),
+                ),
+                telemetryRepository = telemetryRepository,
+            ).execute(
+                profile = profile,
+                config = config,
             )
 
-            if (transition.notifyStatusChange) {
+            if (run.transition.notifyStatusChange) {
                 HealthStatusNotifier(applicationContext).notifyStatusChange(
                     profileId = profileId,
                     displayName = profile.name.ifBlank { profile.host },
-                    snapshot = transition.snapshot,
+                    snapshot = run.transition.snapshot,
                 )
             }
 
             finish(
                 outcome = HealthCheckRunOutcome.SUCCESS,
-                detail = transition.snapshot.status.name,
+                detail = run.diagnosticLabel(),
                 result = Result.success(),
             )
         }.getOrElse { error ->
             val decision = healthWorkerFailureDecision(runAttemptCount)
             finish(
                 outcome = decision.outcome,
-                detail = error.message.orEmpty().ifBlank { error::class.simpleName.orEmpty() },
+                detail = healthWorkerSafeFailureDetail(error),
                 result = if (decision.shouldRetry) Result.retry() else Result.failure(),
             )
         }
@@ -112,4 +119,9 @@ internal fun healthWorkerFailureDecision(runAttemptCount: Int): HealthWorkerFail
         shouldRetry = shouldRetry,
         outcome = if (shouldRetry) HealthCheckRunOutcome.RETRY else HealthCheckRunOutcome.FAILED,
     )
+}
+
+internal fun healthWorkerSafeFailureDetail(error: Throwable): String {
+    val type = error::class.simpleName?.takeIf(String::isNotBlank) ?: "WorkerFailure"
+    return "Błąd infrastruktury: $type"
 }
