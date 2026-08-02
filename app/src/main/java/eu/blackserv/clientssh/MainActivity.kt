@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Icon
@@ -37,6 +38,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import eu.blackserv.clientssh.health.HealthCheckRepository
+import eu.blackserv.clientssh.health.HealthMonitorConfigRepository
+import eu.blackserv.clientssh.health.HealthMonitorScheduler
+import eu.blackserv.clientssh.health.SharedPreferencesHealthCheckStorage
 import eu.blackserv.clientssh.model.AppSettings
 import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.FavoriteCommand
@@ -47,6 +52,7 @@ import eu.blackserv.clientssh.storage.LocalAppStore
 import eu.blackserv.clientssh.terminal.PendingSessionRegistry
 import eu.blackserv.clientssh.terminal.TerminalConnectionState
 import eu.blackserv.clientssh.terminal.TerminalSessionBus
+import eu.blackserv.clientssh.ui.screens.HealthMonitorScreen
 import eu.blackserv.clientssh.ui.screens.HistoryScreen
 import eu.blackserv.clientssh.ui.screens.ProfileEditorDialog
 import eu.blackserv.clientssh.ui.screens.ProfilesScreen
@@ -171,6 +177,7 @@ class MainActivity : ComponentActivity() {
 
 private sealed interface Destination {
     data object Profiles : Destination
+    data object HealthMonitor : Destination
     data object History : Destination
     data object Settings : Destination
     data class Terminal(val profile: HostProfile) : Destination
@@ -196,12 +203,25 @@ private fun ClientSshApp(
     onSaveLog: (String, String) -> Unit,
 ) {
     val context = LocalContext.current
+    val appContext = context.applicationContext
     val profiles = remember(appStore) {
         mutableStateListOf<HostProfile>().also { it.addAll(appStore.loadProfiles()) }
     }
     val favorites = remember(appStore) {
         mutableStateListOf<FavoriteCommand>().also { it.addAll(appStore.loadFavorites()) }
     }
+    val healthConfigRepository = remember(appContext) {
+        HealthMonitorConfigRepository(
+            SharedPreferencesHealthCheckStorage(
+                context = appContext,
+                valueKey = SharedPreferencesHealthCheckStorage.CONFIG_VALUE_KEY,
+            ),
+        )
+    }
+    val healthSnapshotRepository = remember(appContext) {
+        HealthCheckRepository(SharedPreferencesHealthCheckStorage(appContext))
+    }
+    val healthScheduler = remember(appContext) { HealthMonitorScheduler(appContext) }
     val session by TerminalSessionBus.snapshot.collectAsState()
     var terminalSettings by remember(appStore) {
         mutableStateOf(appStore.loadTerminalSettings())
@@ -221,11 +241,28 @@ private fun ClientSshApp(
         }
     }
 
+    LaunchedEffect(Unit) {
+        val profileIds = profiles.mapTo(mutableSetOf()) { it.id }
+        healthConfigRepository.getAll()
+            .filterNot { it.profileId in profileIds }
+            .forEach { stale ->
+                healthScheduler.cancel(stale.profileId)
+                healthConfigRepository.remove(stale.profileId)
+                healthSnapshotRepository.remove(stale.profileId)
+            }
+        healthScheduler.reconcile(healthConfigRepository.getAll())
+    }
+
     fun saveProfiles() = appStore.saveProfiles(profiles)
     fun saveFavorites() = appStore.saveFavorites(favorites)
     fun saveTerminalSettings(settings: TerminalSettings) {
         terminalSettings = settings
         appStore.saveTerminalSettings(settings)
+    }
+    fun removeHealthMonitorData(profileId: String) {
+        healthScheduler.cancel(profileId)
+        healthConfigRepository.remove(profileId)
+        healthSnapshotRepository.remove(profileId)
     }
     fun moveFavorite(favorite: FavoriteCommand, direction: Int) {
         val index = favorites.indexOfFirst { it.id == favorite.id }
@@ -264,6 +301,10 @@ private fun ClientSshApp(
                 onOpenSftp = { destination = Destination.Sftp(it) },
                 onCheckUpdates = { showUpdater = true },
             )
+        }
+
+        Destination.HealthMonitor -> MainShell(current, { destination = it }) {
+            HealthMonitorScreen(profiles = profiles)
         }
 
         Destination.History -> MainShell(current, { destination = it }) {
@@ -332,6 +373,7 @@ private fun ClientSshApp(
             },
             onDelete = { profile ->
                 if (!(sessionIsActive && session.profileId == profile.id)) {
+                    removeHealthMonitorData(profile.id)
                     profiles.removeAll { it.id == profile.id }
                     saveProfiles()
                     showProfileEditor = false
@@ -369,6 +411,7 @@ private fun MainNavigationBar(
     val skin = LocalAppSkin.current
     val items = listOf(
         MainNavItem(Destination.Profiles, "Serwery", Icons.Default.Storage),
+        MainNavItem(Destination.HealthMonitor, "Monitor", Icons.Default.MonitorHeart),
         MainNavItem(Destination.History, "Historia", Icons.Default.History),
         MainNavItem(Destination.Settings, "Ustawienia", Icons.Default.Settings),
     )

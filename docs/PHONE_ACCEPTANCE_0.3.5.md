@@ -1,0 +1,158 @@
+# Client SSH 0.3.5 — test odbiorczy Health Check Monitora
+
+Celem testu jest potwierdzenie, że pomiary TCP wykonują się ręcznie i przez WorkManager po zamknięciu aplikacji oraz po restarcie telefonu. Test nie wymaga udostępniania hosta, loginu, hasła ani klucza.
+
+## Warunki początkowe
+
+- Zainstalowany debug APK z PR #21 (`versionName 0.3.5`, `versionCode 38`).
+- Co najmniej jeden zapisany profil z osiągalnym hostem i portem TCP.
+- Dla szybszego testu awarii przydatny jest drugi profil z zamkniętym lub nieosiągalnym portem.
+- System nie może mieć wymuszonego zatrzymania aplikacji (`Force stop`). Android nie uruchamia WorkManagera dla aplikacji pozostającej w stanie force-stop.
+
+## Bezpieczna instalacja i identyfikacja builda
+
+1. Pobierz artefakt `client-ssh-debug` wyłącznie z ostatniego zielonego pipeline'u PR #21.
+2. Zanotuj numer pipeline'u oraz pełny SHA commita, z którego powstał artefakt.
+3. Oblicz sumę APK przed instalacją:
+
+```bash
+sha256sum app-debug.apk
+```
+
+4. Sprawdź metadane APK, jeśli Android SDK jest dostępne:
+
+```bash
+aapt dump badging app-debug.apk | grep -E "package:|versionCode|versionName"
+```
+
+Oczekiwane wartości: package `eu.blackserv.clientssh`, `versionCode=38`, `versionName=0.3.5`.
+
+5. Instaluj aktualizacyjnie, bez kasowania danych aplikacji:
+
+```bash
+adb install -r app-debug.apk
+```
+
+6. Po instalacji potwierdź wersję na urządzeniu:
+
+```bash
+adb shell dumpsys package eu.blackserv.clientssh | grep -E "versionCode|versionName"
+```
+
+Jeżeli Android zgłosi konflikt podpisu, **nie odinstalowuj istniejącej aplikacji na urządzeniu z ważnymi profilami lub historią**. Debug APK jest podpisany standardowym kluczem debug i może być niezgodny z wcześniej zainstalowanym buildem release. Użyj urządzenia testowego, osobnego profilu Android albo najpierw wykonaj bezpieczny eksport danych, jeśli aplikacja go obsługuje.
+
+## 1. Pomiar ręczny w aplikacji
+
+1. Otwórz zakładkę **Monitor**.
+2. Przy wybranym profilu naciśnij **Sprawdź teraz**.
+3. Poczekaj na zmianę etykiety ze `Sprawdzanie…`.
+
+### PASS
+
+- UI nie zawiesza się.
+- Pojawia się status `ONLINE` albo kolejny kontrolowany błąd.
+- Aktualizują się: ostatni pomiar, latency lub licznik błędów oraz lista ostatnich pomiarów.
+- Wielokrotne szybkie kliknięcie nie uruchamia równoległych pomiarów tego samego profilu.
+
+## 2. Jednorazowy test prawdziwego workera
+
+1. Włącz monitoring przełącznikiem profilu.
+2. Naciśnij **Testuj worker w tle**.
+3. Obserwuj sekcję **Worker w tle**.
+4. Po zakończeniu wybierz **Kopiuj raport testowy**.
+
+### PASS
+
+- Worker przechodzi przez `RUNNING` do `SUCCESS`, `SKIPPED` albo `RETRY`.
+- Dla poprawnego, istniejącego i włączonego profilu oczekiwany wynik to `SUCCESS`.
+- Raport zawiera hashowany `profile`, wynik workera, czasy i stan pomiaru.
+- Raport nie zawiera hosta, loginu, hasła, klucza prywatnego ani pełnego identyfikatora profilu.
+
+Raport można zweryfikować automatycznie z katalogu repozytorium:
+
+```bash
+printf '%s\n' "$REPORT" | scripts/verify-health-monitor-report.sh
+```
+
+Walidator powinien zwrócić `PASS` dla raportu z `worker=SUCCESS`, rozstrzygniętym statusem i co najmniej jednym rekordem historii. Raport z `RETRY`, `FAILED`, nierozstrzygniętym statusem albo potencjalnie wrażliwymi polami powinien zostać odrzucony.
+
+## 3. Naturalne wykonanie okresowe po zamknięciu aplikacji
+
+1. Ustaw interwał **15 min** i włącz monitoring.
+2. Zanotuj czas ostatniego pomiaru oraz ostatniego workera.
+3. Zamknij aplikację z ekranu ostatnich aplikacji. Nie używaj `Force stop`.
+4. Pozostaw telefon z aktywną siecią przez co najmniej 20–30 minut.
+5. Otwórz aplikację i wejdź do zakładki **Monitor**. Jeżeli aplikacja została pozostawiona bezpośrednio na tym ekranie, przejdź na chwilę do innej zakładki i wróć do **Monitor**, aby wymusić świeży odczyt trwałego stanu.
+6. Skopiuj raport testowy.
+
+### PASS
+
+- Czas ostatniego pomiaru jest późniejszy niż przed zamknięciem aplikacji.
+- Sekcja **Worker w tle** pokazuje zakończone wykonanie.
+- Raport zawiera `worker=SUCCESS` lub jednoznaczne `RETRY` z bezpiecznym komunikatem.
+
+### FAIL
+
+- Brak nowego pomiaru po 30 minutach przy dostępnej sieci.
+- Worker pozostaje `RUNNING` przez długi czas bez aktualizacji.
+- Aplikacja ulega awarii przy otwarciu zakładki Monitor.
+
+Przy FAIL należy dodatkowo zanotować producenta telefonu, model, wersję Androida i ustawienia oszczędzania baterii.
+
+## 4. Debounce OFFLINE i powiadomienia
+
+1. Ustaw próg OFFLINE na `3 bł.`.
+2. Użyj profilu z nieosiągalnym portem.
+3. Wykonaj trzy kolejne pomiary.
+
+### PASS
+
+- Po pierwszym i drugim błędzie status nie przechodzi jeszcze do potwierdzonego `OFFLINE`.
+- Po trzecim kolejnym błędzie status przechodzi do `OFFLINE`.
+- Pojawia się dokładnie jedno powiadomienie o przejściu do OFFLINE.
+- Kolejne błędy nie generują następnych identycznych alertów.
+
+Następnie przywróć osiągalność hosta i wykonaj pomiar.
+
+### PASS odzyskania
+
+- Status wraca do `ONLINE`.
+- Licznik błędów zostaje wyzerowany.
+- Pojawia się dokładnie jedno powiadomienie o odzyskaniu dostępności.
+
+## 5. Brak zgody na powiadomienia
+
+Na Androidzie 13 lub nowszym odmów zgody `POST_NOTIFICATIONS`.
+
+### PASS
+
+- Pomiary ręczne i okresowe nadal działają.
+- Historia i diagnostyka nadal są zapisywane.
+- Brak zgody nie powoduje awarii workera.
+- UI informuje, że wyłączone są alerty, a nie sam monitoring.
+
+## 6. Restart telefonu
+
+1. Pozostaw monitoring włączony.
+2. Uruchom ponownie telefon.
+3. Nie otwieraj aplikacji przez co najmniej 20–30 minut, zachowując dostęp do sieci.
+4. Otwórz aplikację, wejdź do zakładki **Monitor** i skopiuj raport.
+
+### PASS
+
+- Konfiguracja monitoringu pozostała zachowana.
+- WorkManager wykonał nowy pomiar po restarcie lub ma poprawnie zaplanowane zadanie oczekujące.
+- Brak duplikatów zadań i serii powiadomień.
+
+## Raport do zgłoszenia wyniku
+
+Do komentarza w issue #20 wystarczy wkleić:
+
+- pełny SHA testowanego commita i numer pipeline'u,
+- SHA-256 zainstalowanego APK,
+- model telefonu i wersję Androida,
+- wynik sekcji 1–6: PASS/FAIL,
+- skopiowany raport diagnostyczny,
+- informację, czy aplikacja miała ograniczenia baterii.
+
+Nie należy publikować zrzutów zawierających prawdziwy host, login, hasło lub klucz.

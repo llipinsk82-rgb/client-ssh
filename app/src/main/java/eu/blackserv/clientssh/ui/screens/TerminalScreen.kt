@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -23,12 +25,10 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.WrapText
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,10 +49,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eu.blackserv.clientssh.model.FavoriteCommand
@@ -77,6 +83,10 @@ private data class TerminalShortcut(
     val action: () -> Unit,
 )
 
+internal fun terminalCompletionInput(command: String): String = command + "\t"
+
+internal fun terminalSubmitInput(command: String): String = command + "\n"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TerminalScreen(
@@ -99,7 +109,6 @@ fun TerminalScreen(
     var terminalFontSize by remember { mutableStateOf(13.sp) }
     var command by remember { mutableStateOf("") }
     var showFavorites by remember { mutableStateOf(false) }
-    var showHealth by remember { mutableStateOf(false) }
     var connectedOnce by remember(profile.id) { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val verticalScroll = rememberScrollState()
@@ -136,7 +145,7 @@ fun TerminalScreen(
 
     fun sendCommand(text: String) {
         if (text.isBlank() || !controlsEnabled) return
-        TerminalSessionBus.send(text + "\r")
+        TerminalSessionBus.send(terminalSubmitInput(text))
         command = ""
     }
 
@@ -150,6 +159,18 @@ fun TerminalScreen(
         TerminalSessionBus.send(bytes)
     }
 
+    fun submitInteractiveInput() {
+        if (!controlsEnabled) return
+        TerminalSessionBus.send(terminalSubmitInput(command))
+        command = ""
+    }
+
+    fun requestCompletion() {
+        if (!controlsEnabled) return
+        TerminalSessionBus.send(terminalCompletionInput(command))
+        command = ""
+    }
+
     val shortcuts = buildList {
         favorites.forEach { favorite ->
             add(
@@ -158,9 +179,9 @@ fun TerminalScreen(
                 },
             )
         }
-        add(TerminalShortcut("ENTER", controlsEnabled) { sendRaw("\r") })
+        add(TerminalShortcut("ENTER", controlsEnabled) { submitInteractiveInput() })
         add(TerminalShortcut("CTRL+C", controlsEnabled) { sendRaw(byteArrayOf(3)) })
-        add(TerminalShortcut("TAB", controlsEnabled) { sendRaw("\t") })
+        add(TerminalShortcut("TAB", controlsEnabled) { requestCompletion() })
         add(TerminalShortcut("CTRL+D", controlsEnabled) { sendRaw(byteArrayOf(4)) })
         add(TerminalShortcut("↑", controlsEnabled) { sendRaw("\u001B[A") })
         add(TerminalShortcut("↓", controlsEnabled) { sendRaw("\u001B[B") })
@@ -177,9 +198,6 @@ fun TerminalScreen(
                     title = { Text("") },
                     navigationIcon = { TextButton(onClick = onClose) { Text("Wstecz") } },
                     actions = {
-                        IconButton(onClick = { showHealth = !showHealth }) {
-                            Icon(Icons.Default.HealthAndSafety, contentDescription = "Health")
-                        }
                         IconButton(onClick = { showFavorites = true }) {
                             Icon(Icons.Default.Favorite, contentDescription = "Ulubione")
                         }
@@ -213,8 +231,6 @@ fun TerminalScreen(
                 status = session.statusText,
                 connected = session.state == TerminalConnectionState.CONNECTED,
             )
-
-            if (showHealth) HealthCard(profile)
 
             Box(
                 modifier = Modifier
@@ -264,14 +280,34 @@ fun TerminalScreen(
                 OutlinedTextField(
                     value = command,
                     onValueChange = { command = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .onPreviewKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) {
+                                false
+                            } else {
+                                when (event.key) {
+                                    Key.Tab -> {
+                                        requestCompletion()
+                                        true
+                                    }
+                                    Key.Enter -> {
+                                        submitInteractiveInput()
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            }
+                        },
                     placeholder = { Text("Komenda…") },
                     singleLine = true,
                     enabled = controlsEnabled,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { submitInteractiveInput() }),
                 )
                 Button(
                     enabled = controlsEnabled && command.isNotBlank(),
-                    onClick = { sendCommand(command) },
+                    onClick = { submitInteractiveInput() },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = TerminalGreen,
                         contentColor = Color(0xFF031008),
@@ -341,17 +377,6 @@ private fun TerminalKeyBar(shortcuts: List<TerminalShortcut>) {
                 ),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             ) { Text(shortcut.label) }
-        }
-    }
-}
-
-@Composable
-private fun HealthCard(profile: HostProfile) {
-    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            Text("Health • ${profile.name}")
-            Text("CPU —   RAM —   LOAD —   DYSK —   PING —")
-            Text("Dane pojawią się po podłączeniu poleceń diagnostycznych.")
         }
     }
 }
