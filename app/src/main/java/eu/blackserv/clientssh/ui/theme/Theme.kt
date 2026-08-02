@@ -1,6 +1,5 @@
 package eu.blackserv.clientssh.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,7 +7,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -23,80 +21,128 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import eu.blackserv.clientssh.model.AppSkin
 
-private val PremiumNight = Color(0xFF010611)
-private val PremiumDeep = Color(0xFF041126)
-private val PremiumPanel = Color(0xE6081830)
-private val PremiumPanelSoft = Color(0xD9102846)
-private val PremiumBlue = Color(0xFF008DFF)
-private val PremiumCyan = Color(0xFF26D5FF)
-private val PremiumIce = Color(0xFFEAF5FF)
-private val PremiumMuted = Color(0xFFA4B9D1)
-private val PremiumAmber = Color(0xFFFFB85C)
-private val PremiumDanger = Color(0xFFFF7187)
-
-val LocalAppSkin = staticCompositionLocalOf { AppSkin.GRAPHITE }
-
-private val PremiumDarkColors = darkColorScheme(
-    primary = PremiumBlue,
-    secondary = PremiumAmber,
-    tertiary = PremiumCyan,
-    background = Color.Transparent,
-    surface = PremiumPanel,
-    surfaceVariant = PremiumPanelSoft,
-    onPrimary = Color(0xFF001526),
-    onSecondary = Color(0xFF241504),
-    onTertiary = Color(0xFF00161E),
-    onBackground = PremiumIce,
-    onSurface = PremiumIce,
-    onSurfaceVariant = PremiumMuted,
-    outline = Color(0xFF24517D),
-    outlineVariant = Color(0xFF163656),
-    error = PremiumDanger,
-    onError = Color(0xFF250007),
+data class PremiumSkinTokens(
+    val skin: AppSkin,
+    val night: Color,
+    val deep: Color,
+    val panelTop: Color,
+    val panelBottom: Color,
+    val panelStrong: Color,
+    val accent: Color,
+    val accentBright: Color,
+    val secondary: Color,
+    val border: Color,
+    val borderMuted: Color,
+    val text: Color,
+    val muted: Color,
+    val terminal: Color,
+    val success: Color,
+    val warning: Color,
+    val danger: Color,
 )
 
-private val PremiumNeonColors = darkColorScheme(
-    primary = PremiumCyan,
-    secondary = PremiumAmber,
-    tertiary = Color(0xFF3D7CFF),
-    background = Color.Transparent,
-    surface = Color(0xE606152A),
-    surfaceVariant = Color(0xD90B2442),
-    onPrimary = Color(0xFF00161E),
-    onSecondary = Color(0xFF241504),
-    onTertiary = Color.White,
-    onBackground = Color(0xFFF1FAFF),
-    onSurface = Color(0xFFF1FAFF),
-    onSurfaceVariant = Color(0xFFABC5DD),
-    outline = Color(0xFF147DB9),
-    outlineVariant = Color(0xFF16466D),
-    error = PremiumDanger,
-    onError = Color(0xFF250007),
+private val SapphireTokens = PremiumSkinTokens(
+    skin = AppSkin.SAPPHIRE,
+    night = Color(0xFF00050D),
+    deep = Color(0xFF03152E),
+    panelTop = Color(0xF20A203B),
+    panelBottom = Color(0xF2051122),
+    panelStrong = Color(0xFF07172A),
+    accent = Color(0xFF008DFF),
+    accentBright = Color(0xFF28D7FF),
+    secondary = Color(0xFFFFB44A),
+    border = Color(0xFF147ED0),
+    borderMuted = Color(0xFF214D73),
+    text = Color(0xFFF4FAFF),
+    muted = Color(0xFF9EB6CE),
+    terminal = Color(0xFF00070D),
+    success = Color(0xFF29E58B),
+    warning = Color(0xFFFFB44A),
+    danger = Color(0xFFFF5C6F),
 )
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF0069B8),
-    secondary = Color(0xFF8A5B12),
-    tertiary = Color(0xFF00677F),
-    background = Color(0xFFF3F7FC),
-    surface = Color.White,
-    surfaceVariant = Color(0xFFE4EDF7),
-    onPrimary = Color.White,
-    onBackground = Color(0xFF07131F),
-    onSurface = Color(0xFF07131F),
-    onSurfaceVariant = Color(0xFF4E6275),
-    outline = Color(0xFFB8C8D8),
+private val AuroraTokens = PremiumSkinTokens(
+    skin = AppSkin.AURORA,
+    night = Color(0xFF000807),
+    deep = Color(0xFF03251F),
+    panelTop = Color(0xF2072D2A),
+    panelBottom = Color(0xF2021515),
+    panelStrong = Color(0xFF061F1D),
+    accent = Color(0xFF00C9C1),
+    accentBright = Color(0xFF4CFFE6),
+    secondary = Color(0xFFFFC45B),
+    border = Color(0xFF0CBAB1),
+    borderMuted = Color(0xFF246B67),
+    text = Color(0xFFF2FFFC),
+    muted = Color(0xFF9AC8C1),
+    terminal = Color(0xFF000B0A),
+    success = Color(0xFF53F59C),
+    warning = Color(0xFFFFC45B),
+    danger = Color(0xFFFF6B7E),
+)
+
+private val ObsidianTokens = PremiumSkinTokens(
+    skin = AppSkin.OBSIDIAN,
+    night = Color(0xFF05030A),
+    deep = Color(0xFF170A2E),
+    panelTop = Color(0xF21D1035),
+    panelBottom = Color(0xF2090712),
+    panelStrong = Color(0xFF160C27),
+    accent = Color(0xFF8D4DFF),
+    accentBright = Color(0xFFC683FF),
+    secondary = Color(0xFFFFB84D),
+    border = Color(0xFF7A3DDA),
+    borderMuted = Color(0xFF4A316B),
+    text = Color(0xFFFFF8FF),
+    muted = Color(0xFFB7A6C9),
+    terminal = Color(0xFF07040C),
+    success = Color(0xFF55E89B),
+    warning = Color(0xFFFFB84D),
+    danger = Color(0xFFFF6681),
+)
+
+fun premiumTokensFor(skin: AppSkin): PremiumSkinTokens = when (skin.canonical) {
+    AppSkin.AURORA -> AuroraTokens
+    AppSkin.OBSIDIAN -> ObsidianTokens
+    else -> SapphireTokens
+}
+
+val LocalAppSkin = staticCompositionLocalOf { AppSkin.SAPPHIRE }
+val LocalPremiumSkin = staticCompositionLocalOf { SapphireTokens }
+
+private fun premiumColorScheme(tokens: PremiumSkinTokens) = darkColorScheme(
+    primary = tokens.accent,
+    onPrimary = Color(0xFF001523),
+    primaryContainer = tokens.accent.copy(alpha = 0.22f),
+    onPrimaryContainer = tokens.text,
+    secondary = tokens.secondary,
+    onSecondary = Color(0xFF211300),
+    secondaryContainer = tokens.secondary.copy(alpha = 0.16f),
+    onSecondaryContainer = tokens.secondary,
+    tertiary = tokens.accentBright,
+    onTertiary = Color(0xFF00181D),
+    tertiaryContainer = tokens.accentBright.copy(alpha = 0.17f),
+    onTertiaryContainer = tokens.text,
+    background = tokens.night,
+    onBackground = tokens.text,
+    surface = tokens.panelBottom,
+    onSurface = tokens.text,
+    surfaceVariant = tokens.panelStrong,
+    onSurfaceVariant = tokens.muted,
+    surfaceTint = tokens.accent,
+    inverseSurface = tokens.text,
+    inverseOnSurface = tokens.night,
+    inversePrimary = tokens.accent,
+    outline = tokens.border,
+    outlineVariant = tokens.borderMuted,
+    error = tokens.danger,
+    onError = Color(0xFF2B0006),
+    errorContainer = tokens.danger.copy(alpha = 0.17f),
+    onErrorContainer = Color(0xFFFFD9DE),
+    scrim = Color.Black.copy(alpha = 0.82f),
 )
 
 private val PremiumShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp),
-)
-
-private val PremiumNeonShapes = Shapes(
     extraSmall = RoundedCornerShape(6.dp),
     small = RoundedCornerShape(10.dp),
     medium = RoundedCornerShape(16.dp),
@@ -106,21 +152,22 @@ private val PremiumNeonShapes = Shapes(
 
 @Composable
 fun ClientSshTheme(
-    skin: AppSkin = AppSkin.GRAPHITE,
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    skin: AppSkin = AppSkin.SAPPHIRE,
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val colors = when {
-        !darkTheme -> LightColors
-        skin == AppSkin.NEON -> PremiumNeonColors
-        else -> PremiumDarkColors
-    }
-    val shapes = if (skin == AppSkin.NEON) PremiumNeonShapes else PremiumShapes
+    @Suppress("UNUSED_VARIABLE")
+    val ignoredDarkTheme = darkTheme
+    val canonical = skin.canonical
+    val tokens = premiumTokensFor(canonical)
 
-    CompositionLocalProvider(LocalAppSkin provides skin) {
+    CompositionLocalProvider(
+        LocalAppSkin provides canonical,
+        LocalPremiumSkin provides tokens,
+    ) {
         MaterialTheme(
-            colorScheme = colors,
-            shapes = shapes,
+            colorScheme = premiumColorScheme(tokens),
+            shapes = PremiumShapes,
             content = content,
         )
     }
@@ -131,122 +178,125 @@ fun AppBackdrop(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val skin = LocalAppSkin.current
-    val accent = if (skin == AppSkin.NEON) PremiumCyan else PremiumBlue
-    val secondaryAccent = if (skin == AppSkin.NEON) Color(0xFF3D7CFF) else PremiumCyan
-    val gridStep = with(LocalDensity.current) { 30.dp.toPx() }
+    val tokens = LocalPremiumSkin.current
+    val gridStep = with(LocalDensity.current) { 34.dp.toPx() }
     val fineStroke = with(LocalDensity.current) { 0.55.dp.toPx() }
-    val curveStroke = with(LocalDensity.current) { 0.9.dp.toPx() }
-    val nodeRadius = with(LocalDensity.current) { 2.4.dp.toPx() }
+    val brightStroke = with(LocalDensity.current) { 1.dp.toPx() }
+    val nodeRadius = with(LocalDensity.current) { 2.2.dp.toPx() }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .drawBehind {
-                drawRect(PremiumNight)
+                drawRect(tokens.night)
                 drawRect(
                     brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color(0xFF061A3B),
-                            PremiumDeep,
-                            PremiumNight,
-                        ),
+                        colors = listOf(tokens.deep, tokens.night, tokens.deep.copy(alpha = 0.82f)),
                         start = Offset.Zero,
                         end = Offset(size.width, size.height),
                     ),
                 )
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(accent.copy(alpha = 0.22f), Color.Transparent),
-                        center = Offset(size.width * 0.05f, size.height * 0.22f),
-                        radius = size.maxDimension * 0.72f,
+                        colors = listOf(
+                            tokens.accent.copy(alpha = 0.26f),
+                            tokens.accent.copy(alpha = 0.07f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width * 0.50f, size.height * 0.46f),
+                        radius = size.maxDimension * 0.74f,
                     ),
                 )
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(secondaryAccent.copy(alpha = 0.13f), Color.Transparent),
-                        center = Offset(size.width * 0.95f, size.height * 0.78f),
-                        radius = size.maxDimension * 0.60f,
+                        colors = listOf(tokens.accentBright.copy(alpha = 0.12f), Color.Transparent),
+                        center = Offset(size.width * 0.02f, size.height * 0.18f),
+                        radius = size.maxDimension * 0.48f,
                     ),
                 )
 
-                var x = 0f
-                while (x <= size.width) {
+                val horizon = size.height * 0.46f
+                var y = horizon
+                var row = 0
+                while (y <= size.height) {
+                    val alpha = 0.045f + (row.coerceAtMost(12) * 0.004f)
                     drawLine(
-                        color = PremiumCyan.copy(alpha = 0.035f),
-                        start = Offset(x, 0f),
+                        color = tokens.accent.copy(alpha = alpha),
+                        start = Offset(0f, y),
+                        end = Offset(size.width, y),
+                        strokeWidth = fineStroke,
+                    )
+                    y += gridStep * (0.72f + row * 0.035f)
+                    row++
+                }
+                var x = -size.width
+                while (x <= size.width * 2f) {
+                    drawLine(
+                        color = tokens.accentBright.copy(alpha = 0.045f),
+                        start = Offset(size.width * 0.5f, horizon),
                         end = Offset(x, size.height),
                         strokeWidth = fineStroke,
                     )
                     x += gridStep
                 }
-                var y = 0f
-                while (y <= size.height) {
-                    drawLine(
-                        color = PremiumBlue.copy(alpha = 0.032f),
-                        start = Offset(0f, y),
-                        end = Offset(size.width, y),
-                        strokeWidth = fineStroke,
+
+                val traces = listOf(
+                    listOf(
+                        Offset(size.width * 0.06f, size.height * 0.16f),
+                        Offset(size.width * 0.20f, size.height * 0.28f),
+                        Offset(size.width * 0.13f, size.height * 0.42f),
+                    ),
+                    listOf(
+                        Offset(size.width * 0.92f, size.height * 0.19f),
+                        Offset(size.width * 0.77f, size.height * 0.31f),
+                        Offset(size.width * 0.88f, size.height * 0.44f),
+                    ),
+                    listOf(
+                        Offset(size.width * 0.10f, size.height * 0.78f),
+                        Offset(size.width * 0.31f, size.height * 0.69f),
+                        Offset(size.width * 0.48f, size.height * 0.82f),
+                        Offset(size.width * 0.69f, size.height * 0.70f),
+                        Offset(size.width * 0.90f, size.height * 0.83f),
+                    ),
+                )
+                traces.forEachIndexed { traceIndex, points ->
+                    val path = Path().apply {
+                        moveTo(points.first().x, points.first().y)
+                        points.drop(1).forEach { point -> lineTo(point.x, point.y) }
+                    }
+                    drawPath(
+                        path = path,
+                        color = if (traceIndex == 1) {
+                            tokens.accentBright.copy(alpha = 0.17f)
+                        } else {
+                            tokens.accent.copy(alpha = 0.19f)
+                        },
+                        style = Stroke(width = brightStroke),
                     )
-                    y += gridStep
+                    points.forEach { point ->
+                        drawCircle(tokens.accent.copy(alpha = 0.13f), nodeRadius * 4.2f, point)
+                        drawCircle(tokens.accentBright.copy(alpha = 0.90f), nodeRadius, point)
+                    }
                 }
 
                 repeat(7) { index ->
-                    val shift = index * size.height * 0.034f
-                    val leftCurve = Path().apply {
-                        moveTo(-size.width * 0.10f, size.height * 0.06f + shift)
-                        cubicTo(
-                            size.width * 0.18f,
-                            size.height * 0.03f + shift,
-                            size.width * 0.04f,
-                            size.height * 0.38f + shift,
-                            size.width * 0.34f,
-                            size.height * 0.46f + shift,
-                        )
-                    }
-                    drawPath(
-                        path = leftCurve,
-                        color = accent.copy(alpha = 0.12f - index * 0.010f),
-                        style = Stroke(width = curveStroke),
+                    val inset = index * size.minDimension * 0.035f
+                    drawArc(
+                        color = tokens.accent.copy(alpha = 0.12f - index * 0.012f),
+                        startAngle = 204f,
+                        sweepAngle = 112f,
+                        useCenter = false,
+                        topLeft = Offset(-size.width * 0.46f + inset, -size.height * 0.10f + inset),
+                        size = androidx.compose.ui.geometry.Size(size.width * 0.92f, size.height * 0.56f),
+                        style = Stroke(width = fineStroke),
                     )
-
-                    val rightCurve = Path().apply {
-                        moveTo(size.width * 1.08f, size.height * 0.20f + shift)
-                        cubicTo(
-                            size.width * 0.76f,
-                            size.height * 0.18f + shift,
-                            size.width * 0.96f,
-                            size.height * 0.52f + shift,
-                            size.width * 0.62f,
-                            size.height * 0.63f + shift,
-                        )
-                    }
-                    drawPath(
-                        path = rightCurve,
-                        color = secondaryAccent.copy(alpha = 0.10f - index * 0.008f),
-                        style = Stroke(width = curveStroke),
-                    )
-                }
-
-                val nodes = listOf(
-                    Offset(size.width * 0.10f, size.height * 0.18f),
-                    Offset(size.width * 0.22f, size.height * 0.36f),
-                    Offset(size.width * 0.84f, size.height * 0.24f),
-                    Offset(size.width * 0.72f, size.height * 0.58f),
-                    Offset(size.width * 0.18f, size.height * 0.78f),
-                    Offset(size.width * 0.88f, size.height * 0.86f),
-                )
-                nodes.forEachIndexed { index, node ->
-                    val nodeColor = if (index % 2 == 0) accent else secondaryAccent
-                    drawCircle(nodeColor.copy(alpha = 0.14f), nodeRadius * 3.8f, node)
-                    drawCircle(nodeColor.copy(alpha = 0.85f), nodeRadius, node)
                 }
 
                 drawLine(
-                    color = accent.copy(alpha = 0.55f),
-                    start = Offset(0f, 0f),
+                    color = tokens.accentBright.copy(alpha = 0.62f),
+                    start = Offset.Zero,
                     end = Offset(size.width, 0f),
-                    strokeWidth = curveStroke,
+                    strokeWidth = brightStroke,
                 )
             },
         content = content,

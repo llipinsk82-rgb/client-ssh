@@ -1,47 +1,53 @@
 package eu.blackserv.clientssh.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import eu.blackserv.clientssh.ui.theme.LocalPremiumSkin
+import eu.blackserv.clientssh.ui.theme.PremiumPanel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen() {
+    val tokens = LocalPremiumSkin.current
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Text("Historia", fontWeight = FontWeight.Bold)
                         Text(
-                            "Ostatnie sesje i szybkie ponowne połączenia",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            "Sesje, zdarzenia i szybkie ponowne połączenia",
+                            color = tokens.accentBright,
                             style = MaterialTheme.typography.labelSmall,
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    containerColor = tokens.night.copy(alpha = 0.88f),
+                    titleContentColor = tokens.text,
                 ),
             )
         },
@@ -50,30 +56,35 @@ fun HistoryScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(20.dp),
+                .padding(18.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = MaterialTheme.shapes.large,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                tonalElevation = 2.dp,
+            PremiumPanel(
+                modifier = Modifier.fillMaxWidth(),
+                strong = true,
+                contentPadding = PaddingValues(26.dp),
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.History,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = tokens.accentBright,
+                        modifier = Modifier.size(48.dp),
                     )
-                    Text("Historia jest gotowa na dane", fontWeight = FontWeight.Bold)
                     Text(
-                        "W następnym kroku zapiszemy udane i nieudane połączenia bez przechowywania haseł ani kluczy.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        "Historia jest gotowa na dane",
+                        color = tokens.text,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Text(
+                        "Udane i nieudane połączenia będą prezentowane tutaj w bezpiecznej osi czasu — bez haseł, passphrase i kluczy prywatnych.",
+                        color = tokens.muted,
                         style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
