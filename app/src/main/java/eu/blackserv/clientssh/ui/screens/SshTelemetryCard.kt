@@ -35,15 +35,166 @@ import java.text.DateFormat
 import java.util.Date
 import kotlin.math.roundToLong
 
+private val MonitorPanel = Color(0xFF111B16)
+private val MonitorTile = Color(0xFF18241D)
+private val MonitorPrimaryText = Color(0xFFE7F4EB)
+private val MonitorSecondaryText = Color(0xFFA9B8AF)
+
 @Composable
-internal fun SshTelemetryCard(
+internal fun SshTelemetrySummary(
+    record: SshTelemetryRecord?,
+    tcpLatencyMs: Long?,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        when {
+            record == null -> Text(
+                "Naciśnij „Sprawdź teraz”, aby pobrać stan serwera.",
+                style = MaterialTheme.typography.labelMedium,
+                color = MonitorSecondaryText,
+            )
+
+            record.outcome == SshTelemetryRecordOutcome.FAILURE -> {
+                Text(
+                    telemetryFailureLabel(record.failureKind),
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(
+                    record.message,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MonitorSecondaryText,
+                )
+                TelemetryTimestamp(record.collectedAt)
+            }
+
+            record.sample != null -> {
+                TelemetryMetricTiles(record.sample, tcpLatencyMs)
+                TelemetryTimestamp(record.collectedAt)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TelemetryMetricTiles(
+    sample: SshTelemetrySample,
+    tcpLatencyMs: Long?,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            MetricTile(
+                label = "CPU",
+                value = formatPercent(sample.cpuUsagePercent),
+                modifier = Modifier.weight(1f),
+            )
+            MetricTile(
+                label = "RAM",
+                value = formatPercent(sample.memoryUsedPercent),
+                detail = "${formatBytesFromKb(sample.memoryUsedKb)} / ${formatBytesFromKb(sample.memoryTotalKb)}",
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            MetricTile(
+                label = "LOAD",
+                value = "${formatDecimal(sample.load1)}/${formatDecimal(sample.load5)}/${formatDecimal(sample.load15)}",
+                modifier = Modifier.weight(1f),
+            )
+            MetricTile(
+                label = "DYSK",
+                value = "${sample.diskUsedPercent}%",
+                detail = "${formatBytesFromKb(sample.diskAvailableKb)} wolne",
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            MetricTile(
+                label = "UPTIME",
+                value = formatUptime(sample.uptimeSeconds),
+                modifier = Modifier.weight(1f),
+            )
+            MetricTile(
+                label = "PING",
+                value = tcpLatencyMs?.let { "TCP ${it} ms" } ?: "TCP —",
+                detail = compactIcmpLabel(sample.pingStatus, sample.pingMs),
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        MetricTile(
+            label = "SIEĆ",
+            value = "↓ ${formatRate(sample.networkRxBytesPerSecond)}   ↑ ${formatRate(sample.networkTxBytesPerSecond)}",
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun MetricTile(
+    label: String,
+    value: String,
+    modifier: Modifier,
+    detail: String? = null,
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = MonitorTile),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 5.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+        ) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MonitorSecondaryText,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                Text(
+                    value,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MonitorPrimaryText,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
+            detail?.takeIf(String::isNotBlank)?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MonitorSecondaryText,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SshTelemetryAdvancedSettings(
     profile: HostProfile,
     config: HealthMonitorConfig,
-    record: SshTelemetryRecord?,
     onSave: (HealthMonitorConfig) -> Unit,
 ) {
-    val supported = profile.protocol == ConnectionProtocol.SSH &&
-        profile.authenticationMethod != AuthenticationMethod.INTERACTIVE
+    val supported = supportsAutomaticTelemetry(profile)
     var pingTargetInput by remember(config.profileId, config.pingTarget) {
         mutableStateOf(config.pingTarget)
     }
@@ -52,36 +203,22 @@ internal fun SshTelemetryCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .45f),
-        ),
+        colors = CardDefaults.cardColors(containerColor = MonitorPanel),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Telemetria SSH", fontWeight = FontWeight.Bold)
-                    Text(
-                        "CPU, RAM, load, dysk, sieć, uptime i ICMP ping",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = config.sshTelemetryEnabled,
-                    enabled = supported,
-                    onCheckedChange = { enabled ->
-                        onSave(config.copy(sshTelemetryEnabled = enabled))
-                    },
-                )
-            }
+            Text(
+                "Diagnostyka sieci",
+                color = MonitorPrimaryText,
+                fontWeight = FontWeight.Bold,
+            )
 
             if (!supported) {
                 Text(
                     if (profile.protocol != ConnectionProtocol.SSH) {
-                        "Telemetria zasobów wymaga profilu SSH."
+                        "Pełne metryki wymagają profilu SSH."
                     } else {
                         "Profil interaktywny wymaga udziału użytkownika i nie może działać w tle."
                     },
@@ -91,24 +228,17 @@ internal fun SshTelemetryCard(
                 return@Column
             }
 
-            if (!config.sshTelemetryEnabled) {
-                Text(
-                    "Wyłączona. Dotychczasowy lekki test TCP działa niezależnie.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                return@Column
-            }
-
-            TelemetryResult(record)
-
             Row(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Prawdziwy ICMP ping", fontWeight = FontWeight.Medium)
                     Text(
-                        "Wykonywany z VPS do wskazanego celu.",
+                        "Dodatkowy ICMP ping",
+                        color = MonitorPrimaryText,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        "Test z VPS. TCP z telefonu jest mierzony zawsze.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MonitorSecondaryText,
                     )
                 }
                 Switch(
@@ -139,13 +269,13 @@ internal fun SshTelemetryCard(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     isError = !pingTargetValid,
-                    label = { Text("Cel ping") },
+                    label = { Text("Cel ICMP") },
                     supportingText = {
                         Text(
                             if (pingTargetValid) {
-                                "IPv4 lub nazwa DNS, np. 1.1.1.1"
+                                "IPv4 lub DNS, np. 1.1.1.1"
                             } else {
-                                "Nieprawidłowy albo niebezpieczny cel ping."
+                                "Nieprawidłowy albo niebezpieczny cel."
                             },
                         )
                     },
@@ -159,85 +289,31 @@ internal fun SshTelemetryCard(
                     enabled = pingTargetValid && parsedPingTarget?.value != config.pingTarget,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Zapisz cel ping")
+                    Text("Zapisz cel ICMP")
                 }
             }
         }
     }
 }
 
-@Composable
-private fun TelemetryResult(record: SshTelemetryRecord?) {
-    when {
-        record == null -> Text(
-            "Brak próbki. Użyj „Sprawdź teraz” albo poczekaj na WorkManager.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+internal fun supportsAutomaticTelemetry(profile: HostProfile): Boolean =
+    profile.protocol == ConnectionProtocol.SSH &&
+        profile.authenticationMethod != AuthenticationMethod.INTERACTIVE
 
-        record.outcome == SshTelemetryRecordOutcome.FAILURE -> {
-            val label = telemetryFailureLabel(record.failureKind)
-            Text(label, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-            Text(
-                record.message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TelemetryTimestamp(record.collectedAt)
-        }
-
-        record.sample != null -> {
-            TelemetryMetrics(record.sample)
-            TelemetryTimestamp(record.collectedAt)
-        }
-    }
-}
-
-@Composable
-private fun TelemetryMetrics(sample: SshTelemetrySample) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        MetricRow("CPU", formatPercent(sample.cpuUsagePercent))
-        MetricRow(
-            "RAM",
-            "${formatBytesFromKb(sample.memoryUsedKb)} / ${formatBytesFromKb(sample.memoryTotalKb)} " +
-                "(${formatPercent(sample.memoryUsedPercent)})",
-        )
-        MetricRow(
-            "LOAD",
-            "${formatDecimal(sample.load1)} / ${formatDecimal(sample.load5)} / ${formatDecimal(sample.load15)}",
-        )
-        MetricRow(
-            "DYSK /",
-            "${sample.diskUsedPercent}% • ${formatBytesFromKb(sample.diskAvailableKb)} wolne",
-        )
-        MetricRow("UPTIME", formatUptime(sample.uptimeSeconds))
-        MetricRow(
-            "SIEĆ",
-            "↓ ${formatRate(sample.networkRxBytesPerSecond)}  ↑ ${formatRate(sample.networkTxBytesPerSecond)}",
-        )
-        MetricRow("PING", formatPing(sample.pingStatus, sample.pingMs))
-    }
-}
-
-@Composable
-private fun MetricRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
-    }
-}
+internal fun configForFullManualCheck(
+    profile: HostProfile,
+    config: HealthMonitorConfig,
+): HealthMonitorConfig = config.copy(
+    sshTelemetryEnabled = supportsAutomaticTelemetry(profile),
+)
 
 @Composable
 private fun TelemetryTimestamp(timestamp: Long) {
     Text(
-        "Próbka: ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(timestamp))}",
+        "Pomiar: ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(timestamp))}",
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = MonitorSecondaryText,
+        maxLines = 1,
     )
 }
 
@@ -294,6 +370,13 @@ internal fun formatPing(status: TelemetryPingStatus, pingMs: Double?): String = 
     TelemetryPingStatus.DISABLED -> "WYŁĄCZONY"
     TelemetryPingStatus.UNAVAILABLE -> "BRAK NARZĘDZIA PING"
     TelemetryPingStatus.FAILED -> "BRAK ODPOWIEDZI"
+}
+
+internal fun compactIcmpLabel(status: TelemetryPingStatus, pingMs: Double?): String? = when (status) {
+    TelemetryPingStatus.OK -> pingMs?.let { "ICMP ${formatDecimal(it)} ms" }
+    TelemetryPingStatus.DISABLED -> null
+    TelemetryPingStatus.UNAVAILABLE -> "ICMP niedostępny"
+    TelemetryPingStatus.FAILED -> "ICMP bez odpowiedzi"
 }
 
 private const val MAX_PING_TARGET_LENGTH = 253

@@ -28,6 +28,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -71,6 +72,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private val MonitorCardBackground = Color(0xFF0D1712)
+private val MonitorAdvancedBackground = Color(0xFF111B16)
+private val MonitorTextPrimary = Color(0xFFE7F4EB)
+private val MonitorTextSecondary = Color(0xFFA9B8AF)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -199,11 +205,16 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
 
     fun checkNow(profile: HostProfile, config: HealthMonitorConfig) {
         if (profile.id in checkingProfileIds) return
+        val fullConfig = configForFullManualCheck(profile, config)
+        if (fullConfig != config) {
+            controller.save(fullConfig)
+            configs = configRepository.getAll().associateBy { it.profileId }
+        }
         checkingProfileIds = checkingProfileIds + profile.id
         scope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    runExecutor.execute(profile = profile, config = config)
+                    runExecutor.execute(profile = profile, config = fullConfig)
                 }
                 refresh()
             } finally {
@@ -244,9 +255,9 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Health Monitor", fontWeight = FontWeight.Bold)
+                        Text("Monitor", fontWeight = FontWeight.Bold)
                         Text(
-                            "TCP availability + opcjonalna telemetria SSH",
+                            "Stan serwera i zasoby VPS",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -265,7 +276,7 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
             ) {
                 Text("Brak profili do monitorowania", fontWeight = FontWeight.Bold)
                 Text(
-                    "Dodaj profil serwera, aby włączyć cykliczny test TCP i opcjonalną telemetrię SSH.",
+                    "Dodaj profil serwera, aby sprawdzać jego dostępność i zasoby.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -286,26 +297,19 @@ fun HealthMonitorScreen(profiles: List<HostProfile>) {
                 }
                 items(profiles, key = { it.id }) { profile ->
                     val config = configs[profile.id] ?: HealthMonitorConfig(profileId = profile.id)
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        HealthProfileCard(
-                            profile = profile,
-                            config = config,
-                            snapshot = snapshots[profile.id],
-                            history = histories[profile.id].orEmpty(),
-                            diagnostic = diagnostics[profile.id],
-                            checking = profile.id in checkingProfileIds,
-                            testingWorker = profile.id in testingWorkerProfileIds,
-                            onSave = ::save,
-                            onCheckNow = { checkNow(profile, config) },
-                            onTestWorkerNow = { testWorkerNow(profile.id) },
-                        )
-                        SshTelemetryCard(
-                            profile = profile,
-                            config = config,
-                            record = telemetryRecords[profile.id],
-                            onSave = ::save,
-                        )
-                    }
+                    HealthProfileCard(
+                        profile = profile,
+                        config = config,
+                        snapshot = snapshots[profile.id],
+                        telemetryRecord = telemetryRecords[profile.id],
+                        history = histories[profile.id].orEmpty(),
+                        diagnostic = diagnostics[profile.id],
+                        checking = profile.id in checkingProfileIds,
+                        testingWorker = profile.id in testingWorkerProfileIds,
+                        onSave = ::save,
+                        onCheckNow = { checkNow(profile, config) },
+                        onTestWorkerNow = { testWorkerNow(profile.id) },
+                    )
                 }
             }
         }
@@ -326,7 +330,7 @@ private fun NotificationPermissionCard(onRequestPermission: () -> Unit) {
         ) {
             Text("Alerty są wyłączone", fontWeight = FontWeight.Bold)
             Text(
-                "Pomiary w tle nadal działają. Zezwól na powiadomienia, aby otrzymywać alerty po zmianie ONLINE/OFFLINE.",
+                "Pomiary nadal działają. Zezwól na powiadomienia, aby otrzymywać alerty ONLINE/OFFLINE.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
@@ -342,6 +346,7 @@ private fun HealthProfileCard(
     profile: HostProfile,
     config: HealthMonitorConfig,
     snapshot: HealthCheckSnapshot?,
+    telemetryRecord: SshTelemetryRecord?,
     history: List<HealthCheckRecord>,
     diagnostic: HealthCheckRunDiagnostic?,
     checking: Boolean,
@@ -351,10 +356,11 @@ private fun HealthProfileCard(
     onTestWorkerNow: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
+    var showAdvanced by remember(profile.id) { mutableStateOf(false) }
     val statusColor = when (snapshot?.status ?: HealthStatus.UNKNOWN) {
-        HealthStatus.ONLINE -> Color(0xFF3DDC84)
+        HealthStatus.ONLINE -> Color(0xFF62D58A)
         HealthStatus.OFFLINE -> Color(0xFFFF7187)
-        HealthStatus.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
+        HealthStatus.UNKNOWN -> MonitorTextSecondary
     }
     val statusLabel = when (snapshot?.status ?: HealthStatus.UNKNOWN) {
         HealthStatus.ONLINE -> "ONLINE"
@@ -365,57 +371,172 @@ private fun HealthProfileCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, statusColor.copy(alpha = .55f)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, statusColor.copy(alpha = .60f)),
+        colors = CardDefaults.cardColors(containerColor = MonitorCardBackground),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row {
+            Row(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
-                    Text(profile.name.ifBlank { profile.host }, fontWeight = FontWeight.Bold)
+                    Text(
+                        profile.name.ifBlank { profile.host },
+                        color = MonitorTextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
                     Text(
                         "${profile.host}:${profile.port}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MonitorTextSecondary,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
                 Text(statusLabel, color = statusColor, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(10.dp))
-                Switch(
-                    checked = config.enabled,
-                    onCheckedChange = { onSave(config.copy(enabled = it)) },
-                )
             }
 
             Text(
                 snapshot?.let {
                     buildString {
                         append(it.message.ifBlank { "Oczekiwanie na wynik" })
-                        it.responseTimeMs?.let { ms -> append(" • ${ms} ms") }
+                        it.responseTimeMs?.let { ms -> append(" • TCP ${ms} ms") }
                         if (it.consecutiveFailures > 0) append(" • błędy: ${it.consecutiveFailures}")
                     }
-                } ?: "Monitoring jeszcze nie wykonał pomiaru.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                } ?: "Brak pomiaru. Naciśnij przycisk poniżej.",
+                color = MonitorTextSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
 
-            snapshot?.lastCheckedAt?.let { checkedAt ->
-                Text(
-                    "Ostatni pomiar: ${healthTimestampLabel(checkedAt, now)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Button(
+                onClick = onCheckNow,
+                enabled = !checking,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (checking) "Sprawdzanie całego serwera…" else "Sprawdź teraz")
+            }
+
+            SshTelemetrySummary(
+                record = telemetryRecord,
+                tcpLatencyMs = snapshot?.responseTimeMs,
+            )
+
+            TextButton(
+                onClick = { showAdvanced = !showAdvanced },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (showAdvanced) "Ukryj opcje zaawansowane" else "Opcje zaawansowane")
+            }
+
+            if (showAdvanced) {
+                AdvancedMonitorSettings(
+                    profile = profile,
+                    config = config,
+                    history = history,
+                    snapshot = snapshot,
+                    diagnostic = diagnostic,
+                    testingWorker = testingWorker,
+                    now = now,
+                    onSave = onSave,
+                    onTestWorkerNow = onTestWorkerNow,
+                    onCopyReport = {
+                        clipboard.setText(
+                            AnnotatedString(
+                                healthBackgroundReport(
+                                    profileId = profile.id,
+                                    enabled = config.enabled,
+                                    diagnostic = diagnostic,
+                                    snapshot = snapshot,
+                                    historySize = history.size,
+                                    now = now,
+                                ),
+                            ),
+                        )
+                    },
                 )
             }
-            snapshot?.lastSuccessAt?.let { successAt ->
-                Text(
-                    "Ostatni sukces: ${healthTimestampLabel(successAt, now)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        }
+    }
+}
+
+@Composable
+private fun AdvancedMonitorSettings(
+    profile: HostProfile,
+    config: HealthMonitorConfig,
+    history: List<HealthCheckRecord>,
+    snapshot: HealthCheckSnapshot?,
+    diagnostic: HealthCheckRunDiagnostic?,
+    testingWorker: Boolean,
+    now: Long,
+    onSave: (HealthMonitorConfig) -> Unit,
+    onTestWorkerNow: () -> Unit,
+    onCopyReport: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MonitorAdvancedBackground),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Monitoring w tle",
+                        color = MonitorTextPrimary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "Android wykonuje pomiary okresowo i może wysyłać alerty.",
+                        color = MonitorTextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = config.enabled,
+                    onCheckedChange = { enabled ->
+                        onSave(
+                            config.copy(
+                                enabled = enabled,
+                                sshTelemetryEnabled = if (enabled) {
+                                    supportsAutomaticTelemetry(profile)
+                                } else {
+                                    config.sshTelemetryEnabled
+                                },
+                            ),
+                        )
+                    },
                 )
             }
+
+            Text("Interwał", color = MonitorTextPrimary, style = MaterialTheme.typography.labelMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(15L, 30L, 60L).forEach { minutes ->
+                    FilterChip(
+                        selected = config.intervalMinutes == minutes,
+                        onClick = { onSave(config.copy(intervalMinutes = minutes)) },
+                        label = { Text(if (minutes < 60) "$minutes min" else "1 h") },
+                    )
+                }
+            }
+
+            Text("Próg OFFLINE", color = MonitorTextPrimary, style = MaterialTheme.typography.labelMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(1, 3, 5).forEach { threshold ->
+                    FilterChip(
+                        selected = config.offlineFailureThreshold == threshold,
+                        onClick = { onSave(config.copy(offlineFailureThreshold = threshold)) },
+                        label = { Text("$threshold bł.") },
+                    )
+                }
+            }
+
+            SshTelemetryAdvancedSettings(
+                profile = profile,
+                config = config,
+                onSave = onSave,
+            )
 
             BackgroundRunCard(
                 enabled = config.enabled,
@@ -423,36 +544,27 @@ private fun HealthProfileCard(
                 testing = testingWorker,
                 now = now,
                 onTestWorkerNow = onTestWorkerNow,
-                onCopyReport = {
-                    clipboard.setText(
-                        AnnotatedString(
-                            healthBackgroundReport(
-                                profileId = profile.id,
-                                enabled = config.enabled,
-                                diagnostic = diagnostic,
-                                snapshot = snapshot,
-                                historySize = history.size,
-                                now = now,
-                            ),
-                        ),
-                    )
-                },
+                onCopyReport = onCopyReport,
             )
 
             if (history.isNotEmpty()) {
-                Text("Ostatnie pomiary", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "Ostatnie pomiary TCP",
+                    color = MonitorTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                )
                 history.take(3).forEach { record ->
                     val recordColor = when (record.status) {
-                        HealthStatus.ONLINE -> Color(0xFF3DDC84)
+                        HealthStatus.ONLINE -> Color(0xFF62D58A)
                         HealthStatus.OFFLINE -> Color(0xFFFF7187)
-                        HealthStatus.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
+                        HealthStatus.UNKNOWN -> MonitorTextSecondary
                     }
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             healthTimestampLabel(record.checkedAt, now),
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MonitorTextSecondary,
                         )
                         Text(
                             record.status.name,
@@ -464,40 +576,10 @@ private fun HealthProfileCard(
                             Text(
                                 " • ${latency} ms",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = MonitorTextSecondary,
                             )
                         }
                     }
-                }
-            }
-
-            Button(
-                onClick = onCheckNow,
-                enabled = !checking,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (checking) "Sprawdzanie…" else "Sprawdź teraz")
-            }
-
-            Text("Interwał", style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(15L, 30L, 60L).forEach { minutes ->
-                    FilterChip(
-                        selected = config.intervalMinutes == minutes,
-                        onClick = { onSave(config.copy(intervalMinutes = minutes)) },
-                        label = { Text(if (minutes < 60) "$minutes min" else "1 h") },
-                    )
-                }
-            }
-
-            Text("Próg OFFLINE", style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(1, 3, 5).forEach { threshold ->
-                    FilterChip(
-                        selected = config.offlineFailureThreshold == threshold,
-                        onClick = { onSave(config.copy(offlineFailureThreshold = threshold)) },
-                        label = { Text("$threshold bł.") },
-                    )
                 }
             }
         }
@@ -520,54 +602,69 @@ private fun BackgroundRunCard(
         else -> diagnostic.outcome.name
     }
     val labelColor = when {
-        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
-        diagnostic?.outcome == HealthCheckRunOutcome.SUCCESS -> Color(0xFF3DDC84)
+        !enabled -> MonitorTextSecondary
+        diagnostic?.outcome == HealthCheckRunOutcome.SUCCESS -> Color(0xFF62D58A)
         diagnostic?.outcome == HealthCheckRunOutcome.RETRY || diagnostic?.outcome == HealthCheckRunOutcome.FAILED ->
             Color(0xFFFF7187)
         diagnostic?.outcome == HealthCheckRunOutcome.RUNNING || testing -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> MonitorTextSecondary
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
-        ),
+        colors = CardDefaults.cardColors(containerColor = MonitorCardBackground),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(modifier = Modifier.fillMaxWidth()) {
-                Text("Worker w tle", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                Text(
+                    "Worker w tle",
+                    modifier = Modifier.weight(1f),
+                    color = MonitorTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                )
                 Text(label, color = labelColor, fontWeight = FontWeight.Bold)
             }
             when {
-                !enabled -> Text("Okresowy pomiar jest wyłączony.", style = MaterialTheme.typography.bodySmall)
-                testing && diagnostic?.outcome != HealthCheckRunOutcome.RUNNING -> Text(
-                    "Test został zlecony. Oczekiwanie na uruchomienie przez Androida…",
+                !enabled -> Text(
+                    "Okresowy pomiar jest wyłączony.",
                     style = MaterialTheme.typography.bodySmall,
+                    color = MonitorTextSecondary,
+                )
+                testing && diagnostic?.outcome != HealthCheckRunOutcome.RUNNING -> Text(
+                    "Test został zlecony. Oczekiwanie na Androida…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MonitorTextSecondary,
                 )
                 diagnostic == null -> Text(
-                    "Zadanie jest zaplanowane; Android wybierze dokładny czas wykonania.",
+                    "Zadanie jest zaplanowane; Android wybierze dokładny czas.",
                     style = MaterialTheme.typography.bodySmall,
+                    color = MonitorTextSecondary,
                 )
                 else -> {
                     Text(
                         "Start: ${healthTimestampLabel(diagnostic.startedAt, now)}",
                         style = MaterialTheme.typography.labelSmall,
+                        color = MonitorTextSecondary,
                     )
                     diagnostic.finishedAt?.let {
                         Text(
                             "Koniec: ${healthTimestampLabel(it, now)}",
                             style = MaterialTheme.typography.labelSmall,
+                            color = MonitorTextSecondary,
                         )
                     }
                     if (diagnostic.detail.isNotBlank()) {
-                        Text(diagnostic.detail, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            diagnostic.detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MonitorTextSecondary,
+                        )
                     }
                 }
             }
-            Button(
+            OutlinedButton(
                 onClick = onTestWorkerNow,
                 enabled = enabled && !testing,
                 modifier = Modifier.fillMaxWidth(),

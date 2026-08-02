@@ -9,6 +9,7 @@ internal fun Throwable.isRetryableSshError(): Boolean {
         "invalid private key",
         "reject hostkey",
         "host key has changed",
+        "hostkey has been changed",
         "host jest pusty",
         "użytkownik ssh jest pusty",
         "klucz prywatny jest pusty",
@@ -29,9 +30,13 @@ internal fun Throwable.toSafeSshMessage(host: String): String {
         raw.contains("klucz prywatny jest pusty", ignoreCase = true) ->
             "Klucz prywatny jest pusty. Edytuj profil i wklej poprawny klucz."
 
-        raw.contains("reject HostKey", ignoreCase = true) ||
-            raw.contains("host key has changed", ignoreCase = true) ->
+        raw.contains("host key has changed", ignoreCase = true) ||
+            raw.contains("hostkey has been changed", ignoreCase = true) ->
             "Klucz hosta SSH zmienił się. Połączenie zostało zablokowane."
+
+        raw.contains("reject HostKey", ignoreCase = true) ||
+            raw.contains("unknownhostkey", ignoreCase = true) ->
+            "Klucz hosta SSH nie został zaakceptowany. Połączenie zostało zablokowane."
 
         raw.contains("UnknownHostException", ignoreCase = true) ||
             raw.contains("Unable to resolve host", ignoreCase = true) ->

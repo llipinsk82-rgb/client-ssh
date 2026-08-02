@@ -21,6 +21,7 @@ data class TerminalSnapshot(
     val state: TerminalConnectionState = TerminalConnectionState.IDLE,
     val statusText: String = "Rozłączono",
     val output: String = "",
+    val fullLogPath: String? = null,
 )
 
 object PendingSessionRegistry {
@@ -47,8 +48,12 @@ object TerminalSessionBus {
     @Volatile
     private var writer: ((ByteArray) -> Unit)? = null
 
+    @Volatile
+    private var transcriptSink: ((String) -> Unit)? = null
+
     fun begin(profile: HostProfile) {
         writer = null
+        transcriptSink = null
         _snapshot.value = TerminalSnapshot(
             profileId = profile.id,
             profileName = profile.name,
@@ -56,6 +61,22 @@ object TerminalSessionBus {
             statusText = "Łączenie z ${profile.host}:${profile.port}…",
             output = "Łączenie z ${profile.username}@${profile.host}:${profile.port}…\n",
         )
+    }
+
+    fun markAwaitingHostKey(profile: HostProfile) {
+        writer = null
+        _snapshot.update { current ->
+            val previousOutput = if (current.profileId == profile.id) current.output else ""
+            val notice = "\n[Bezpieczeństwo] Oczekiwanie na weryfikację klucza hosta SSH.\n"
+            TerminalSnapshot(
+                profileId = profile.id,
+                profileName = profile.name,
+                state = TerminalConnectionState.CONNECTING,
+                statusText = "Zweryfikuj fingerprint hosta…",
+                output = (previousOutput + notice).takeLast(MAX_BUFFER_CHARS),
+                fullLogPath = current.fullLogPath,
+            )
+        }
     }
 
     fun markReconnecting(
@@ -73,6 +94,7 @@ object TerminalSessionBus {
                 state = TerminalConnectionState.CONNECTING,
                 statusText = status,
                 output = combined.takeLast(MAX_BUFFER_CHARS),
+                fullLogPath = current.fullLogPath,
             )
         }
     }
@@ -83,6 +105,15 @@ object TerminalSessionBus {
 
     fun detachWriter() {
         writer = null
+    }
+
+    fun attachTranscriptSink(path: String, sink: (String) -> Unit) {
+        transcriptSink = sink
+        _snapshot.update { it.copy(fullLogPath = path) }
+    }
+
+    fun detachTranscriptSink() {
+        transcriptSink = null
     }
 
     fun markConnected(text: String = "Połączono") {
@@ -121,6 +152,7 @@ object TerminalSessionBus {
 
     fun append(text: String) {
         if (text.isEmpty()) return
+        runCatching { transcriptSink?.invoke(text) }
         _snapshot.update { current ->
             val combined = current.output + text
             val lastClear = clearScreenPattern.findAll(combined).lastOrNull()

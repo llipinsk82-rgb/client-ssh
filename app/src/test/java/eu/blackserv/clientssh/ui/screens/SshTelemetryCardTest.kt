@@ -1,8 +1,15 @@
 package eu.blackserv.clientssh.ui.screens
 
+import eu.blackserv.clientssh.health.HealthMonitorConfig
 import eu.blackserv.clientssh.health.SshTelemetryFailureKind
 import eu.blackserv.clientssh.health.TelemetryPingStatus
+import eu.blackserv.clientssh.model.AuthenticationMethod
+import eu.blackserv.clientssh.model.ConnectionProtocol
+import eu.blackserv.clientssh.model.HostProfile
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SshTelemetryCardTest {
@@ -34,6 +41,54 @@ class SshTelemetryCardTest {
     }
 
     @Test
+    fun `main summary hides disabled optional ICMP`() {
+        assertNull(compactIcmpLabel(TelemetryPingStatus.DISABLED, null))
+        assertEquals("ICMP 8.4 ms", compactIcmpLabel(TelemetryPingStatus.OK, 8.4))
+        assertEquals("ICMP niedostępny", compactIcmpLabel(TelemetryPingStatus.UNAVAILABLE, null))
+    }
+
+    @Test
+    fun `one click enables full telemetry for supported SSH profiles`() {
+        val passwordProfile = profile(AuthenticationMethod.PASSWORD)
+        val keyProfile = profile(AuthenticationMethod.PRIVATE_KEY)
+
+        assertTrue(
+            configForFullManualCheck(
+                passwordProfile,
+                HealthMonitorConfig(profileId = passwordProfile.id, sshTelemetryEnabled = false),
+            ).sshTelemetryEnabled,
+        )
+        assertTrue(
+            configForFullManualCheck(
+                keyProfile,
+                HealthMonitorConfig(profileId = keyProfile.id, sshTelemetryEnabled = false),
+            ).sshTelemetryEnabled,
+        )
+    }
+
+    @Test
+    fun `one click does not start background unsafe interactive telemetry`() {
+        val interactiveProfile = profile(AuthenticationMethod.INTERACTIVE)
+        val telnetProfile = profile(
+            authenticationMethod = AuthenticationMethod.PASSWORD,
+            protocol = ConnectionProtocol.TELNET,
+        )
+
+        assertFalse(
+            configForFullManualCheck(
+                interactiveProfile,
+                HealthMonitorConfig(profileId = interactiveProfile.id, sshTelemetryEnabled = true),
+            ).sshTelemetryEnabled,
+        )
+        assertFalse(
+            configForFullManualCheck(
+                telnetProfile,
+                HealthMonitorConfig(profileId = telnetProfile.id, sshTelemetryEnabled = true),
+            ).sshTelemetryEnabled,
+        )
+    }
+
+    @Test
     fun `maps sensitive transport failures to controlled labels`() {
         assertEquals(
             "HOST KEY NIEZAAKCEPTOWANY",
@@ -48,4 +103,17 @@ class SshTelemetryCardTest {
             telemetryFailureLabel(SshTelemetryFailureKind.INTERNAL_ERROR),
         )
     }
+
+    private fun profile(
+        authenticationMethod: AuthenticationMethod,
+        protocol: ConnectionProtocol = ConnectionProtocol.SSH,
+    ): HostProfile = HostProfile(
+        id = "profile-${protocol.name}-${authenticationMethod.name}",
+        name = "Test",
+        host = "example.test",
+        port = protocol.defaultPort,
+        username = "root",
+        protocol = protocol,
+        authenticationMethod = authenticationMethod,
+    )
 }

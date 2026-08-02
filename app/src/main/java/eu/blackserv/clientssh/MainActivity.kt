@@ -46,14 +46,18 @@ import eu.blackserv.clientssh.model.AppSettings
 import eu.blackserv.clientssh.model.AppSkin
 import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.model.cloneHostProfile
 import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.service.TerminalSessionService
+import eu.blackserv.clientssh.ssh.HostKeyTrustBus
 import eu.blackserv.clientssh.storage.LocalAppStore
 import eu.blackserv.clientssh.terminal.PendingSessionRegistry
 import eu.blackserv.clientssh.terminal.TerminalConnectionState
 import eu.blackserv.clientssh.terminal.TerminalSessionBus
+import eu.blackserv.clientssh.terminal.TerminalSessionLogStore
 import eu.blackserv.clientssh.ui.screens.HealthMonitorScreen
 import eu.blackserv.clientssh.ui.screens.HistoryScreen
+import eu.blackserv.clientssh.ui.screens.HostKeyTrustDialog
 import eu.blackserv.clientssh.ui.screens.ProfileEditorDialog
 import eu.blackserv.clientssh.ui.screens.ProfilesScreen
 import eu.blackserv.clientssh.ui.screens.SettingsScreen
@@ -65,19 +69,27 @@ import eu.blackserv.clientssh.ui.theme.AppBackdrop
 import eu.blackserv.clientssh.ui.theme.ClientSshTheme
 import eu.blackserv.clientssh.ui.theme.LocalAppSkin
 import kotlinx.coroutines.flow.MutableStateFlow
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private var pendingLogContent: String = ""
+    private var pendingLogSource: File? = null
     private val openActiveTerminalRequest = MutableStateFlow(0L)
 
     private val saveLogLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain"),
     ) { uri ->
         if (uri != null) {
-            contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
-                writer.write(pendingLogContent)
+            contentResolver.openOutputStream(uri)?.use { output ->
+                val source = pendingLogSource
+                if (source != null && source.isFile) {
+                    source.inputStream().buffered().use { input -> input.copyTo(output) }
+                } else {
+                    output.write(pendingLogContent.toByteArray(Charsets.UTF_8))
+                }
             }
         }
+        pendingLogSource = null
         pendingLogContent = ""
     }
 
@@ -117,8 +129,12 @@ class MainActivity : ComponentActivity() {
                         onSessionStopped = ::stopSessionService,
                         onFullscreenChange = ::setFullscreen,
                         onKeepScreenAwakeChange = ::setKeepScreenAwake,
-                        onSaveLog = { filename, content ->
-                            pendingLogContent = content
+                        onSaveLog = { filename, sourcePath, fallbackContent ->
+                            pendingLogSource = TerminalSessionLogStore.resolveForExport(
+                                File(noBackupFilesDir, TerminalSessionLogStore.DIRECTORY_NAME),
+                                sourcePath,
+                            )
+                            pendingLogContent = if (pendingLogSource == null) fallbackContent else ""
                             saveLogLauncher.launch(filename.sanitizeFilename())
                         },
                     )
@@ -200,7 +216,7 @@ private fun ClientSshApp(
     onSessionStopped: () -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
     onKeepScreenAwakeChange: (Boolean) -> Unit,
-    onSaveLog: (String, String) -> Unit,
+    onSaveLog: (String, String?, String) -> Unit,
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -223,6 +239,7 @@ private fun ClientSshApp(
     }
     val healthScheduler = remember(appContext) { HealthMonitorScheduler(appContext) }
     val session by TerminalSessionBus.snapshot.collectAsState()
+    val hostKeyTrustRequest by HostKeyTrustBus.request.collectAsState()
     var terminalSettings by remember(appStore) {
         mutableStateOf(appStore.loadTerminalSettings())
     }
@@ -254,6 +271,12 @@ private fun ClientSshApp(
     }
 
     fun saveProfiles() = appStore.saveProfiles(profiles)
+    fun cloneProfile(source: HostProfile) {
+        val clone = cloneHostProfile(source, profiles.map { it.name })
+        val sourceIndex = profiles.indexOfFirst { it.id == source.id }
+        if (sourceIndex >= 0) profiles.add(sourceIndex + 1, clone) else profiles.add(clone)
+        saveProfiles()
+    }
     fun saveFavorites() = appStore.saveFavorites(favorites)
     fun saveTerminalSettings(settings: TerminalSettings) {
         terminalSettings = settings
@@ -287,7 +310,7 @@ private fun ClientSshApp(
                     editedProfile = it
                     showProfileEditor = true
                 },
-                onClone = {},
+                onClone = ::cloneProfile,
                 onDelete = {},
                 onConnect = { profile ->
                     if (sessionIsActive && session.profileId == profile.id) {
@@ -365,10 +388,8 @@ private fun ClientSshApp(
                 saveProfiles()
                 showProfileEditor = false
             },
-            onClone = { clone ->
-                profiles.add(clone)
-                saveProfiles()
-                editedProfile = clone
+            onClone = { source ->
+                cloneProfile(source)
                 showProfileEditor = false
             },
             onDelete = { profile ->
@@ -384,6 +405,14 @@ private fun ClientSshApp(
 
     if (showUpdater) {
         UpdateDialog(context = context, onDismiss = { showUpdater = false })
+    }
+
+    hostKeyTrustRequest?.let { request ->
+        HostKeyTrustDialog(
+            request = request,
+            onTrust = { HostKeyTrustBus.trust(request.id) },
+            onReject = { HostKeyTrustBus.dismiss(request.id) },
+        )
     }
 }
 

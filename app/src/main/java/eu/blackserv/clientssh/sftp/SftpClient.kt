@@ -14,7 +14,9 @@ import java.util.Date
 import java.util.Locale
 import java.util.Vector
 
- data class SftpEntry(
+internal const val SFTP_STRICT_HOST_KEY_CHECKING = "yes"
+
+data class SftpEntry(
     val name: String,
     val path: String,
     val isDirectory: Boolean,
@@ -25,6 +27,7 @@ import java.util.Vector
 )
 
 class SftpClient(private val knownHostsFile: File) {
+    private var jsch: JSch? = null
     private var session: Session? = null
     private var channel: ChannelSftp? = null
 
@@ -35,30 +38,31 @@ class SftpClient(private val knownHostsFile: File) {
         val username = profile.username.trim()
         require(host.isNotBlank()) { "Host jest pusty." }
         require(username.isNotBlank()) { "Użytkownik SSH jest pusty." }
+        check(knownHostsFile.isFile) { "Magazyn known_hosts nie jest gotowy." }
 
-        knownHostsFile.parentFile?.mkdirs()
-        if (!knownHostsFile.exists()) knownHostsFile.createNewFile()
-
-        val jsch = JSch().apply {
+        val newJsch = JSch().apply {
             setKnownHosts(knownHostsFile.absolutePath)
-            if (profile.authenticationMethod == AuthenticationMethod.PRIVATE_KEY) {
-                val passphrase = profile.privateKeyPassphrase
-                    .takeIf(String::isNotEmpty)
-                    ?.toByteArray(StandardCharsets.UTF_8)
-                addIdentity(
-                    profile.id,
-                    profile.privateKey.toByteArray(StandardCharsets.UTF_8),
-                    null,
-                    passphrase,
-                )
+        }
+
+        if (profile.authenticationMethod == AuthenticationMethod.PRIVATE_KEY) {
+            require(profile.privateKey.isNotBlank()) { "Klucz prywatny jest pusty." }
+            val privateKeyBytes = profile.privateKey.toByteArray(StandardCharsets.UTF_8)
+            val passphraseBytes = profile.privateKeyPassphrase
+                .takeIf(String::isNotEmpty)
+                ?.toByteArray(StandardCharsets.UTF_8)
+            try {
+                newJsch.addIdentity(profile.id, privateKeyBytes, null, passphraseBytes)
+            } finally {
+                privateKeyBytes.fill(0)
+                passphraseBytes?.fill(0)
             }
         }
 
-        val newSession = jsch.getSession(username, host, profile.port).apply {
+        val newSession = newJsch.getSession(username, host, profile.port).apply {
             if (profile.authenticationMethod == AuthenticationMethod.PASSWORD) {
                 setPassword(profile.password)
             }
-            setConfig("StrictHostKeyChecking", "accept-new")
+            setConfig("StrictHostKeyChecking", SFTP_STRICT_HOST_KEY_CHECKING)
             setConfig(
                 "PreferredAuthentications",
                 when (profile.authenticationMethod) {
@@ -71,13 +75,22 @@ class SftpClient(private val knownHostsFile: File) {
             setServerAliveCountMax(3)
         }
 
-        newSession.connect(CONNECT_TIMEOUT_MS)
-        val newChannel = newSession.openChannel("sftp") as ChannelSftp
-        newChannel.connect(CHANNEL_TIMEOUT_MS)
+        var newChannel: ChannelSftp? = null
+        try {
+            newSession.connect(CONNECT_TIMEOUT_MS)
+            newChannel = newSession.openChannel("sftp") as ChannelSftp
+            newChannel.connect(CHANNEL_TIMEOUT_MS)
 
-        session = newSession
-        channel = newChannel
-        return newChannel.pwd()
+            jsch = newJsch
+            session = newSession
+            channel = newChannel
+            return newChannel.pwd()
+        } catch (error: Throwable) {
+            runCatching { newChannel?.disconnect() }
+            runCatching { newSession.disconnect() }
+            runCatching { newJsch.removeAllIdentity() }
+            throw error
+        }
     }
 
     fun listCurrent(): List<SftpEntry> {
@@ -126,8 +139,10 @@ class SftpClient(private val knownHostsFile: File) {
     fun disconnect() {
         runCatching { channel?.disconnect() }
         runCatching { session?.disconnect() }
+        runCatching { jsch?.removeAllIdentity() }
         channel = null
         session = null
+        jsch = null
     }
 
     private fun requireChannel(): ChannelSftp = channel ?: error("SFTP nie jest połączone.")
@@ -157,22 +172,8 @@ class SftpClient(private val knownHostsFile: File) {
         else -> "$base/$name"
     }
 
-    private fun Throwable.readableMessage(host: String): String {
-        val raw = message?.trim().orEmpty()
-        return when {
-            raw.contains("Auth fail", ignoreCase = true) -> "Nieprawidłowy login, hasło lub klucz SSH."
-            raw.contains("reject HostKey", ignoreCase = true) -> "Klucz hosta SSH zmienił się. Połączenie zostało zablokowane."
-            raw.contains("UnknownHostException", ignoreCase = true) ||
-                raw.contains("Unable to resolve host", ignoreCase = true) ->
-                "Nie można znaleźć hosta: $host. Sprawdź internet, DNS albo literówkę w profilu."
-            raw.contains("Permission denied", ignoreCase = true) -> "Brak uprawnień do tej operacji."
-            raw.contains("timeout", ignoreCase = true) -> "Przekroczono czas oczekiwania na połączenie."
-            raw.isNotEmpty() -> raw
-            else -> javaClass.simpleName
-        }
-    }
-
-    fun readableError(error: Throwable, profile: HostProfile): String = error.readableMessage(profile.host.trim())
+    fun readableError(error: Throwable, profile: HostProfile): String =
+        safeSftpErrorMessage(error, profile.host.trim())
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 15_000
@@ -180,5 +181,36 @@ class SftpClient(private val knownHostsFile: File) {
         private val DATE_FORMAT = ThreadLocal.withInitial {
             SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
         }
+    }
+}
+
+internal fun safeSftpErrorMessage(error: Throwable, host: String): String {
+    val raw = error.message?.trim().orEmpty()
+    return when {
+        raw.contains("host key has changed", ignoreCase = true) ||
+            raw.contains("hostkey has been changed", ignoreCase = true) ->
+            "Klucz hosta SSH zmienił się. Połączenie SFTP zostało zablokowane."
+
+        raw.contains("reject HostKey", ignoreCase = true) ||
+            raw.contains("unknownhostkey", ignoreCase = true) ->
+            "Klucz hosta SSH nie jest zweryfikowany. Najpierw połącz się przez Terminal i porównaj fingerprint."
+
+        raw.contains("Auth fail", ignoreCase = true) ->
+            "Nieprawidłowy login, hasło lub klucz SSH."
+
+        raw.contains("UnknownHostException", ignoreCase = true) ||
+            raw.contains("Unable to resolve host", ignoreCase = true) ->
+            "Nie można znaleźć hosta: $host. Sprawdź internet, DNS albo literówkę w profilu."
+
+        raw.contains("Permission denied", ignoreCase = true) ->
+            "Brak uprawnień do tej operacji SFTP."
+
+        raw.contains("timeout", ignoreCase = true) ->
+            "Przekroczono czas oczekiwania na połączenie SFTP."
+
+        raw.contains("klucz prywatny jest pusty", ignoreCase = true) ->
+            "Klucz prywatny jest pusty. Edytuj profil i wklej poprawny klucz."
+
+        else -> "Nie udało się wykonać operacji SFTP."
     }
 }

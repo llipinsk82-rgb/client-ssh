@@ -16,10 +16,13 @@ import eu.blackserv.clientssh.R
 import eu.blackserv.clientssh.model.AuthenticationMethod
 import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.ssh.HostKeyTrustBus
+import eu.blackserv.clientssh.ssh.InteractiveHostKeyRepository
 import eu.blackserv.clientssh.storage.LocalAppStore
 import eu.blackserv.clientssh.terminal.PendingSessionRegistry
 import eu.blackserv.clientssh.terminal.TerminalConnectionState
 import eu.blackserv.clientssh.terminal.TerminalSessionBus
+import eu.blackserv.clientssh.terminal.TerminalSessionLogStore
 import java.io.File
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
@@ -37,6 +40,9 @@ class TerminalSessionService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val appStore by lazy { LocalAppStore(applicationContext) }
     private val sessionPrefs by lazy { getSharedPreferences(PREFS_NAME, MODE_PRIVATE) }
+    private val sessionLogStore by lazy {
+        TerminalSessionLogStore(File(noBackupFilesDir, TerminalSessionLogStore.DIRECTORY_NAME))
+    }
 
     private var connectionJob: Job? = null
     private var reconnectJob: Job? = null
@@ -122,6 +128,8 @@ class TerminalSessionService : Service() {
             }
         }
 
+        prepareSessionLog(profile, restoringSession)
+
         updateNotification(profile.name, if (restoringSession) "Przywracanie połączenia…" else "Łączenie…", profile.id)
         startConnection(profile, reconnecting = restoringSession)
         return if (sessionKeeperEnabled) START_STICKY else START_NOT_STICKY
@@ -133,12 +141,22 @@ class TerminalSessionService : Service() {
     }
 
     override fun onDestroy() {
+        val profile = activeProfile
+        val preserveLogForRestore = maintainSession && sessionKeeperEnabled && profile != null
+        if (preserveLogForRestore) {
+            runCatching {
+                sessionLogStore.appendNotice(
+                    "Usługa została zatrzymana przez Androida; log zostanie wznowiony przy Session Keeperze.",
+                )
+            }
+        }
+        closeSessionLog(preserveForRestore = preserveLogForRestore)
+        HostKeyTrustBus.cancelUnknown()
         connectionJob?.cancel()
         reconnectJob?.cancel()
         closeTransport()
         serviceScope.cancel()
 
-        val profile = activeProfile
         if (maintainSession && sessionKeeperEnabled && profile != null) {
             TerminalSessionBus.markReconnecting(
                 profile = profile,
@@ -169,11 +187,21 @@ class TerminalSessionService : Service() {
     }
 
     private suspend fun runSsh(profile: HostProfile, reconnecting: Boolean) {
+        var isReconnectAttempt = reconnecting
+        while (maintainSession) {
+            val retryAfterTrust = runSshAttempt(profile, isReconnectAttempt)
+            if (!retryAfterTrust) return
+            isReconnectAttempt = false
+        }
+    }
+
+    private suspend fun runSshAttempt(profile: HostProfile, reconnecting: Boolean): Boolean {
         val jsch = JSch()
         val host = profile.host.trim()
         val username = profile.username.trim()
         var connectedOnce = false
         var shellEndedNormally = false
+        var trustRepository: InteractiveHostKeyRepository? = null
 
         if (reconnecting && TerminalSessionBus.snapshot.value.state != TerminalConnectionState.CONNECTING) {
             TerminalSessionBus.markReconnecting(profile)
@@ -204,9 +232,15 @@ class TerminalSessionService : Service() {
                 }
             }
 
+            trustRepository = InteractiveHostKeyRepository(
+                delegate = jsch.hostKeyRepository,
+                displayHost = host,
+                port = profile.port,
+            )
             val session = jsch.getSession(username, host, profile.port).apply {
+                hostKeyRepository = trustRepository
                 if (profile.authenticationMethod == AuthenticationMethod.PASSWORD) setPassword(profile.password)
-                setConfig("StrictHostKeyChecking", "accept-new")
+                setConfig("StrictHostKeyChecking", "yes")
                 setConfig(
                     "PreferredAuthentications",
                     when (profile.authenticationMethod) {
@@ -266,9 +300,51 @@ class TerminalSessionService : Service() {
                 maintainSession && sessionKeeperEnabled -> scheduleReconnect(profile, "Powłoka SSH została przerwana.")
                 else -> finishShellSession(profile, "Sesja zakończona")
             }
+            return false
         } catch (_: CancellationException) {
             throw CancellationException()
         } catch (error: Throwable) {
+            val trustRequest = HostKeyTrustBus.pendingUnknownFor(host, profile.port)
+            if (trustRequest != null) {
+                TerminalSessionBus.markAwaitingHostKey(profile)
+                updateNotification(
+                    profile.name,
+                    "Otwórz aplikację i zweryfikuj fingerprint hosta SSH",
+                    profile.id,
+                )
+
+                val trusted = HostKeyTrustBus.awaitDecision(
+                    trustRequest.id,
+                    HOST_KEY_TRUST_TIMEOUT_MS,
+                )
+                if (!trusted) {
+                    trustRepository?.discard(trustRequest.id)
+                    failPermanently(
+                        profile,
+                        "Klucz hosta SSH nie został zaakceptowany. Połączenie zostało zablokowane.",
+                    )
+                    return false
+                }
+
+                val persisted = trustRepository?.persist(trustRequest.id) == true
+                if (!persisted) {
+                    failPermanently(
+                        profile,
+                        "Nie udało się bezpiecznie zapisać zweryfikowanego klucza hosta SSH.",
+                    )
+                    return false
+                }
+
+                if (!maintainSession) return false
+                TerminalSessionBus.markReconnecting(
+                    profile = profile,
+                    status = "Ponowne łączenie po weryfikacji…",
+                    notice = "Fingerprint hosta został zaakceptowany. Rozpoczynam nowe połączenie SSH.",
+                )
+                updateNotification(profile.name, "Ponowne łączenie po weryfikacji hosta…", profile.id)
+                return true
+            }
+
             val readable = error.toSafeSshMessage(host)
             val sessionWasPreviouslyConnected = connectedOnce || sessionPrefs.getBoolean(KEY_SESSION_WAS_CONNECTED, false)
             if (maintainSession && sessionKeeperEnabled && sessionWasPreviouslyConnected && error.isRetryableSshError()) {
@@ -276,7 +352,9 @@ class TerminalSessionService : Service() {
             } else {
                 failPermanently(profile, readable)
             }
+            return false
         } finally {
+            trustRepository?.discardAll()
             TerminalSessionBus.detachWriter()
             closeTransport()
             jsch.removeAllIdentity()
@@ -288,6 +366,8 @@ class TerminalSessionService : Service() {
     }
 
     private fun finishShellSession(profile: HostProfile, message: String) {
+        runCatching { sessionLogStore.appendNotice(message) }
+        closeSessionLog(preserveForRestore = false)
         maintainSession = false
         reconnectJob?.cancel()
         clearRememberedSession()
@@ -299,6 +379,11 @@ class TerminalSessionService : Service() {
 
     private fun scheduleReconnect(profile: HostProfile, reason: String) {
         if (!maintainSession || !sessionKeeperEnabled) return
+        runCatching {
+            sessionLogStore.appendNotice(
+                "$reason Ponawiam połączenie za ${RECONNECT_DELAY_MS / 1_000} s.",
+            )
+        }
         TerminalSessionBus.markReconnecting(
             profile = profile,
             status = "Ponowne łączenie za ${RECONNECT_DELAY_MS / 1_000} s…",
@@ -317,6 +402,8 @@ class TerminalSessionService : Service() {
     }
 
     private fun failPermanently(profile: HostProfile, message: String) {
+        runCatching { sessionLogStore.appendNotice("Sesja zatrzymana: $message") }
+        closeSessionLog(preserveForRestore = false)
         maintainSession = false
         reconnectJob?.cancel()
         clearRememberedSession()
@@ -326,7 +413,10 @@ class TerminalSessionService : Service() {
     }
 
     private fun disconnectAndStop(startId: Int, message: String) {
+        runCatching { sessionLogStore.appendNotice(message) }
+        closeSessionLog(preserveForRestore = false)
         maintainSession = false
+        HostKeyTrustBus.cancelUnknown()
         reconnectJob?.cancel()
         connectionJob?.cancel()
         closeTransport()
@@ -349,7 +439,35 @@ class TerminalSessionService : Service() {
         sessionPrefs.edit()
             .remove(KEY_ACTIVE_PROFILE_ID)
             .remove(KEY_SESSION_WAS_CONNECTED)
+            .remove(KEY_ACTIVE_LOG_PATH)
             .apply()
+    }
+
+    private fun prepareSessionLog(profile: HostProfile, restoringSession: Boolean) {
+        TerminalSessionBus.detachTranscriptSink()
+        runCatching { sessionLogStore.close() }
+        val resumePath = if (restoringSession) {
+            sessionPrefs.getString(KEY_ACTIVE_LOG_PATH, null)
+        } else {
+            null
+        }
+        runCatching {
+            sessionLogStore.open(profile.name, profile.host, profile.port, resumePath)
+        }.onSuccess { file ->
+            sessionPrefs.edit().putString(KEY_ACTIVE_LOG_PATH, file.absolutePath).apply()
+            TerminalSessionBus.attachTranscriptSink(file.absolutePath, sessionLogStore::appendInbound)
+        }.onFailure {
+            sessionPrefs.edit().remove(KEY_ACTIVE_LOG_PATH).apply()
+            TerminalSessionBus.append(
+                "\n[Log] Pełny log sesji jest niedostępny; bufor terminala nadal działa.\n",
+            )
+        }
+    }
+
+    private fun closeSessionLog(preserveForRestore: Boolean) {
+        TerminalSessionBus.detachTranscriptSink()
+        runCatching { sessionLogStore.close() }
+        if (!preserveForRestore) sessionPrefs.edit().remove(KEY_ACTIVE_LOG_PATH).apply()
     }
 
     private fun closeTransport() {
@@ -426,8 +544,10 @@ class TerminalSessionService : Service() {
         private const val PREFS_NAME = "terminal_session_keeper"
         private const val KEY_ACTIVE_PROFILE_ID = "active_profile_id"
         private const val KEY_SESSION_WAS_CONNECTED = "session_was_connected"
+        private const val KEY_ACTIVE_LOG_PATH = "active_log_path"
         private const val CONNECT_TIMEOUT_MS = 15_000
         private const val CHANNEL_TIMEOUT_MS = 10_000
+        private const val HOST_KEY_TRUST_TIMEOUT_MS = 120_000L
         private const val KEEPALIVE_INTERVAL_MS = 15_000
         private const val KEEPALIVE_MAX_MISSES = 3
         private const val RECONNECT_DELAY_MS = 5_000L
