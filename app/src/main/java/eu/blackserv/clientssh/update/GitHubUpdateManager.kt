@@ -2,6 +2,8 @@ package eu.blackserv.clientssh.update
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -21,7 +23,7 @@ data class ReleaseInfo(
     val notes: String,
     val apkName: String,
     val apkUrl: String,
-    val apkSha256: String?,
+    val apkSha256: String,
     val releaseUrl: String,
 )
 
@@ -61,13 +63,22 @@ class GitHubUpdateManager(private val context: Context) {
                 val directory = File(context.cacheDir, "updates").apply { mkdirs() }
                 val target = File(directory, release.apkName.ifBlank { "client-ssh-${release.version}.apk" })
                 val partial = File(directory, "${target.name}.part")
-                if (partial.exists()) partial.delete()
-                if (target.exists()) target.delete()
+                partial.delete()
+                target.delete()
 
-                downloadToFile(release.apkUrl, partial)
-                release.apkSha256?.let { expected -> verifySha256(partial, expected) }
-                partial.renameTo(target) || error("Nie udało się przygotować pliku APK do instalacji.")
-                target
+                try {
+                    downloadToFile(release.apkUrl, partial)
+                    verifySha256(partial, release.apkSha256)
+                    check(partial.renameTo(target)) {
+                        "Nie udało się przygotować pliku APK do instalacji."
+                    }
+                    verifyInstallableApk(target)
+                    target
+                } catch (error: Throwable) {
+                    partial.delete()
+                    target.delete()
+                    throw error
+                }
             }
             post { onResult(result) }
         }
@@ -77,6 +88,8 @@ class GitHubUpdateManager(private val context: Context) {
         if (!apk.exists() || apk.length() <= 0L) {
             return InstallLaunchResult.Error("Plik APK nie istnieje albo jest pusty. Pobierz aktualizację ponownie.")
         }
+
+        verifyInstallableApk(apk)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !context.packageManager.canRequestPackageInstalls()
@@ -104,54 +117,51 @@ class GitHubUpdateManager(private val context: Context) {
     }.getOrElse { InstallLaunchResult.Error(it.message ?: "Nie udało się uruchomić instalatora Androida.") }
 
     private fun fetchNewestAvailableRelease(): ReleaseInfo? {
-        val connection = openConnection(RELEASES_URL, api = true)
+        val connection = openConnection(LATEST_RELEASE_URL, api = true)
         val response = connection.inputStream.bufferedReader().use { it.readText() }
-        val releases = JSONArray(response)
+        val release = JSONObject(response)
+        if (release.optBoolean("draft") || release.optBoolean("prerelease")) return null
 
-        for (index in 0 until releases.length()) {
-            val release = releases.getJSONObject(index)
-            if (release.optBoolean("draft") || release.optBoolean("prerelease")) continue
+        val tag = release.optString("tag_name")
+        val version = tag.removePrefix("v").removePrefix("V")
+        if (!isNewerVersion(version, BuildConfig.VERSION_NAME)) return null
 
-            val tag = release.optString("tag_name")
-            val version = tag.removePrefix("v").removePrefix("V")
-            if (!isNewer(version, BuildConfig.VERSION_NAME)) continue
+        val assets = release.optJSONArray("assets") ?: error("Wydanie $tag nie zawiera plików aktualizacji.")
+        val apkAsset = findReleaseApkAsset(assets)
+            ?: error("Wydanie $tag nie zawiera podpisanego APK release.")
+        val apkName = apkAsset.getString("name")
+        val shaAsset = findShaAsset(assets, apkName)
+            ?: error("Wydanie $tag nie zawiera wymaganej sumy SHA-256 dla APK.")
+        val checksum = fetchSha256(shaAsset.getString("browser_download_url"))
+            ?: error("Nie udało się odczytać sumy SHA-256 wydania $tag.")
 
-            val assets = release.optJSONArray("assets") ?: continue
-            val apkAsset = findApkAsset(assets) ?: continue
-            val shaAsset = findShaAsset(assets, apkAsset.optString("name"))
-
-            return ReleaseInfo(
-                tag = tag,
-                version = version,
-                notes = release.optString("body").ifBlank { "Brak opisu zmian." },
-                apkName = apkAsset.getString("name"),
-                apkUrl = apkAsset.getString("browser_download_url"),
-                apkSha256 = shaAsset?.let { fetchSha256(it.getString("browser_download_url")) },
-                releaseUrl = release.optString("html_url"),
-            )
-        }
-
-        return null
+        return ReleaseInfo(
+            tag = tag,
+            version = version,
+            notes = release.optString("body").ifBlank { "Brak opisu zmian." },
+            apkName = apkName,
+            apkUrl = apkAsset.getString("browser_download_url"),
+            apkSha256 = checksum,
+            releaseUrl = release.optString("html_url"),
+        )
     }
 
-    private fun findApkAsset(assets: JSONArray): JSONObject? = (0 until assets.length())
+    private fun findReleaseApkAsset(assets: JSONArray): JSONObject? = (0 until assets.length())
         .asSequence()
         .map { assets.getJSONObject(it) }
-        .filter { it.optString("name").endsWith(".apk", ignoreCase = true) }
-        .sortedWith(
-            compareByDescending<JSONObject> { !it.optString("name").contains("debug", ignoreCase = true) }
-                .thenBy { it.optString("name") },
-        )
+        .filter { asset ->
+            val name = asset.optString("name")
+            name.endsWith(".apk", ignoreCase = true) &&
+                !name.contains("debug", ignoreCase = true) &&
+                !name.contains("unsigned", ignoreCase = true)
+        }
+        .sortedBy { it.optString("name") }
         .firstOrNull()
 
     private fun findShaAsset(assets: JSONArray, apkName: String): JSONObject? = (0 until assets.length())
         .asSequence()
         .map { assets.getJSONObject(it) }
         .firstOrNull { it.optString("name").equals("$apkName.sha256", ignoreCase = true) }
-        ?: (0 until assets.length())
-            .asSequence()
-            .map { assets.getJSONObject(it) }
-            .firstOrNull { it.optString("name").endsWith(".sha256", ignoreCase = true) }
 
     private fun fetchSha256(url: String): String? {
         val text = openConnection(url, api = false).inputStream.bufferedReader().use { it.readText() }
@@ -172,6 +182,84 @@ class GitHubUpdateManager(private val context: Context) {
         }
     }
 
+    private fun verifyInstallableApk(apk: File) {
+        val candidate = packageInfoForArchive(apk)
+            ?: error("Android nie rozpoznaje pobranego pliku jako prawidłowego APK.")
+        require(candidate.packageName == context.packageName) {
+            "Pobrany APK należy do innej aplikacji (${candidate.packageName})."
+        }
+
+        val installed = installedPackageInfo()
+        val installedCode = versionCode(installed)
+        val candidateCode = versionCode(candidate)
+        require(candidateCode > installedCode) {
+            "Pobrany APK nie jest nowszy: versionCode $candidateCode, zainstalowany $installedCode."
+        }
+
+        val installedCertificates = signingCertificateDigests(installed)
+        val candidateCertificates = signingCertificateDigests(candidate)
+        require(installedCertificates.isNotEmpty() && candidateCertificates.isNotEmpty()) {
+            "Nie udało się zweryfikować certyfikatu podpisu APK."
+        }
+        require(candidateCertificates.any { it in installedCertificates }) {
+            "Aktualizacja jest podpisana innym kluczem niż zainstalowana aplikacja. " +
+                "Nie instaluj jej jako OTA; potrzebna jest oficjalna paczka podpisana stałym kluczem Client SSH."
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun packageInfoForArchive(apk: File): PackageInfo? {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getPackageArchiveInfo(
+                apk.absolutePath,
+                PackageManager.PackageInfoFlags.of(flags.toLong()),
+            )
+        } else {
+            context.packageManager.getPackageArchiveInfo(apk.absolutePath, flags)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun installedPackageInfo(): PackageInfo {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.PackageInfoFlags.of(flags.toLong()),
+            )
+        } else {
+            context.packageManager.getPackageInfo(context.packageName, flags)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun versionCode(info: PackageInfo): Long =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()
+
+    @Suppress("DEPRECATION")
+    private fun signingCertificateDigests(info: PackageInfo): Set<String> {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = info.signingInfo ?: return emptySet()
+            if (signingInfo.hasMultipleSigners()) {
+                signingInfo.apkContentsSigners
+            } else {
+                signingInfo.signingCertificateHistory
+            }
+        } else {
+            info.signatures.orEmpty()
+        }
+        return signatures.mapTo(linkedSetOf()) { signature -> sha256(signature.toByteArray()) }
+    }
+
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
@@ -182,8 +270,13 @@ class GitHubUpdateManager(private val context: Context) {
                 digest.update(buffer, 0, read)
             }
         }
-        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+        return digest.digest().toHex()
     }
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).toHex()
+
+    private fun ByteArray.toHex(): String = joinToString("") { byte -> "%02x".format(byte) }
 
     private fun openConnection(url: String, api: Boolean): HttpURLConnection {
         val connection = URL(url).openConnection() as HttpURLConnection
@@ -213,33 +306,33 @@ class GitHubUpdateManager(private val context: Context) {
         return connection
     }
 
-    private fun isNewer(remote: String, local: String): Boolean {
-        val remoteParts = versionParts(remote)
-        val localParts = versionParts(local)
-        val length = maxOf(remoteParts.size, localParts.size)
-        return (0 until length).firstNotNullOfOrNull { index ->
-            val remotePart = remoteParts.getOrElse(index) { 0 }
-            val localPart = localParts.getOrElse(index) { 0 }
-            when {
-                remotePart > localPart -> true
-                remotePart < localPart -> false
-                else -> null
-            }
-        } ?: false
-    }
-
-    private fun versionParts(version: String): List<Int> = version
-        .substringBefore('-')
-        .split('.')
-        .map { part -> part.filter(Char::isDigit).toIntOrNull() ?: 0 }
-
     private fun post(block: () -> Unit) {
         android.os.Handler(context.mainLooper).post(block)
     }
 
     companion object {
-        private const val RELEASES_URL =
-            "https://api.github.com/repos/llipinsk82-rgb/client-ssh/releases?per_page=10"
+        private const val LATEST_RELEASE_URL =
+            "https://api.github.com/repos/llipinsk82-rgb/client-ssh/releases/latest"
         private val SHA256_REGEX = Regex("[a-fA-F0-9]{64}")
     }
 }
+
+internal fun isNewerVersion(remote: String, local: String): Boolean {
+    val remoteParts = versionParts(remote)
+    val localParts = versionParts(local)
+    val length = maxOf(remoteParts.size, localParts.size)
+    return (0 until length).firstNotNullOfOrNull { index ->
+        val remotePart = remoteParts.getOrElse(index) { 0 }
+        val localPart = localParts.getOrElse(index) { 0 }
+        when {
+            remotePart > localPart -> true
+            remotePart < localPart -> false
+            else -> null
+        }
+    } ?: false
+}
+
+private fun versionParts(version: String): List<Int> = version
+    .substringBefore('-')
+    .split('.')
+    .map { part -> part.filter(Char::isDigit).toIntOrNull() ?: 0 }

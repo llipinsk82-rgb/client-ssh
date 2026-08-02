@@ -38,9 +38,17 @@ private sealed interface UpdateUiState {
 }
 
 @Composable
-fun UpdateDialog(context: Context, onDismiss: () -> Unit) {
+fun UpdateDialog(
+    context: Context,
+    onDismiss: () -> Unit,
+    initialRelease: ReleaseInfo? = null,
+) {
     val manager = remember(context) { GitHubUpdateManager(context.applicationContext) }
-    var state by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Checking) }
+    var state by remember(initialRelease) {
+        mutableStateOf<UpdateUiState>(
+            initialRelease?.let(UpdateUiState::Available) ?: UpdateUiState.Checking,
+        )
+    }
 
     fun check() {
         state = UpdateUiState.Checking
@@ -53,34 +61,38 @@ fun UpdateDialog(context: Context, onDismiss: () -> Unit) {
         }
     }
 
-    LaunchedEffect(Unit) { check() }
+    LaunchedEffect(initialRelease) {
+        if (initialRelease == null) check()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Aktualizacje OTA") },
+        title = { Text("Aktualizacja Client SSH") },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text("Zainstalowana wersja: ${BuildConfig.VERSION_NAME}")
+                Text("Zainstalowana wersja: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
                 Spacer(Modifier.height(12.dp))
                 when (val current = state) {
                     UpdateUiState.Checking -> {
                         CircularProgressIndicator()
                         Spacer(Modifier.height(8.dp))
-                        Text("Sprawdzanie GitHub Releases…")
+                        Text("Sprawdzanie bezpiecznej aktualizacji OTA…")
                     }
                     UpdateUiState.Current -> Text("Masz najnowszą opublikowaną wersję aplikacji.")
                     is UpdateUiState.Available -> ReleaseDetails(current.release)
                     is UpdateUiState.Downloading -> {
                         CircularProgressIndicator()
                         Spacer(Modifier.height(8.dp))
-                        Text("Pobieranie ${current.release.apkName}…")
+                        Text("Pobieranie i weryfikowanie ${current.release.apkName}…")
                     }
                     is UpdateUiState.Ready -> {
-                        Text("APK zostało pobrane i zweryfikowane. Naciśnij Instaluj.")
+                        Text("Aktualizacja została pobrana oraz zweryfikowana.")
                         Spacer(Modifier.height(8.dp))
-                        current.release.apkSha256?.let { Text("SHA-256: $it") }
+                        Text("Sprawdzono pakiet, wyższy versionCode, SHA-256 i zgodność certyfikatu podpisu.")
                         Spacer(Modifier.height(8.dp))
-                        Text("Przy pierwszej aktualizacji Android może poprosić o zgodę na instalowanie z Client SSH.")
+                        Text("SHA-256: ${current.release.apkSha256}")
+                        Spacer(Modifier.height(8.dp))
+                        Text("Naciśnij Instaluj. Android pokaże systemowe potwierdzenie aktualizacji.")
                     }
                     is UpdateUiState.Info -> Text(current.message)
                     is UpdateUiState.Error -> Text(current.message)
@@ -94,15 +106,16 @@ fun UpdateDialog(context: Context, onDismiss: () -> Unit) {
                     manager.download(current.release) { result ->
                         state = result.fold(
                             onSuccess = { UpdateUiState.Ready(current.release, it) },
-                            onFailure = { UpdateUiState.Error(it.message ?: "Błąd pobierania") },
+                            onFailure = { UpdateUiState.Error(it.message ?: "Błąd pobierania aktualizacji") },
                         )
                     }
-                }) { Text("Pobierz") }
+                }) { Text("Pobierz OTA") }
                 is UpdateUiState.Ready -> Button(onClick = {
                     state = when (val result = manager.install(current.apk)) {
                         InstallLaunchResult.Started -> UpdateUiState.Info("Instalator Androida został uruchomiony.")
                         InstallLaunchResult.PermissionRequired -> UpdateUiState.Info(
-                            "Android wymaga zgody na instalowanie z tej aplikacji. Włącz zgodę, wróć do Client SSH i kliknij aktualizację ponownie.",
+                            "Android wymaga jednorazowej zgody na instalowanie aktualizacji z Client SSH. " +
+                                "Włącz zgodę, wróć do aplikacji i ponownie naciśnij aktualizację.",
                         )
                         is InstallLaunchResult.Error -> UpdateUiState.Error(result.message)
                     }
@@ -113,7 +126,7 @@ fun UpdateDialog(context: Context, onDismiss: () -> Unit) {
                 else -> Unit
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Zamknij") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Później") } },
     )
 }
 
@@ -121,11 +134,9 @@ fun UpdateDialog(context: Context, onDismiss: () -> Unit) {
 private fun ReleaseDetails(release: ReleaseInfo) {
     Text("Dostępna wersja: ${release.version}")
     Spacer(Modifier.height(6.dp))
-    Text("Plik: ${release.apkName}")
-    release.apkSha256?.let {
-        Spacer(Modifier.height(6.dp))
-        Text("SHA-256: $it")
-    }
+    Text("Oficjalny podpisany plik: ${release.apkName}")
+    Spacer(Modifier.height(6.dp))
+    Text("SHA-256: ${release.apkSha256}")
     Spacer(Modifier.height(8.dp))
     Text(
         release.notes,
