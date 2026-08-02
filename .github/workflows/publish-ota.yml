@@ -1,11 +1,23 @@
 name: Publish Client SSH OTA
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/publish-ota.yml"
+      - "scripts/check-no-release-secrets.sh"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v0.3.7"
-        required: true
+        description: "Optional release tag; defaults to v<versionName>"
+        required: false
+        default: ""
         type: string
       notes:
         description: "Short release notes shown by the in-app updater"
@@ -17,7 +29,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: publish-client-ssh-ota-${{ github.event.inputs.tag }}
+  group: publish-client-ssh-ota-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -25,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      TAG_NAME: ${{ github.event.inputs.tag }}
+      REQUESTED_TAG: ${{ github.event.inputs.tag || '' }}
       RELEASE_NOTES: ${{ github.event.inputs.notes || 'Client SSH update' }}
     steps:
       - uses: actions/checkout@v4
@@ -45,15 +57,26 @@ jobs:
       - name: Validate release metadata
         id: metadata
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           APP_VERSION="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
           VERSION_CODE="$(sed -n 's/^[[:space:]]*versionCode = \([0-9][0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)"
           test -n "$APP_VERSION"
           test -n "$VERSION_CODE"
+
+          TAG_NAME="${REQUESTED_TAG:-v$APP_VERSION}"
           test "$TAG_NAME" = "v$APP_VERSION"
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists. Bump versionName and versionCode before publishing another OTA update." >&2
+            exit 1
+          fi
+
           printf 'app_version=%s\n' "$APP_VERSION" >> "$GITHUB_OUTPUT"
           printf 'version_code=%s\n' "$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          printf 'tag_name=%s\n' "$TAG_NAME" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         with:
@@ -159,14 +182,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.metadata.outputs.tag_name }}
         run: |
           set -euo pipefail
           APK_PATH="${{ steps.package.outputs.apk_path }}"
           SHA_PATH="${{ steps.package.outputs.sha_path }}"
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            echo "Release $TAG_NAME already exists; refusing to overwrite it." >&2
-            exit 1
-          fi
           gh release create "$TAG_NAME" \
             "$APK_PATH" \
             "$SHA_PATH" \
