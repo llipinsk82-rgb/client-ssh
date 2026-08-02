@@ -43,7 +43,11 @@ jobs:
         run: |
           set -euo pipefail
           cd exported
-          sha256sum -c client-ssh-0.3.7.apk.sha256
+
+          EXPECTED_SHA="$(awk 'NF { print tolower($1); exit }' client-ssh-0.3.7.apk.sha256)"
+          ACTUAL_SHA="$(sha256sum client-ssh-0.3.7.apk | awk '{ print tolower($1) }')"
+          test -n "$EXPECTED_SHA"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
 
           AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
@@ -59,7 +63,7 @@ jobs:
           test -n "$CERT"
           printf '%s\n' "$CERT" > CERTIFICATE_SHA256.txt
           printf 'package=%s\nversionCode=%s\nversionName=%s\n' "$PACKAGE" "$VERSION_CODE" "$VERSION_NAME" > APK_METADATA.txt
-          sha256sum client-ssh-0.3.7.apk > VERIFIED_SHA256SUMS.txt
+          printf '%s  %s\n' "$ACTUAL_SHA" "client-ssh-0.3.7.apk" > VERIFIED_SHA256SUMS.txt
 
       - name: Upload verified official OTA package
         uses: actions/upload-artifact@v4
