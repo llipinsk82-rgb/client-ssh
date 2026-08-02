@@ -1,5 +1,7 @@
 package eu.blackserv.clientssh.ui.screens
 
+import eu.blackserv.clientssh.terminal.TerminalWrapPreferences
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
@@ -112,7 +114,13 @@ fun TerminalScreen(
 ) {
     val session by TerminalSessionBus.snapshot.collectAsState()
     var fullscreen by remember { mutableStateOf(false) }
-    var wrapMode by remember { mutableStateOf(TextWrapMode.WRAP) }
+    val terminalWrapContext = LocalContext.current
+    var wrapMode by remember {
+        mutableStateOf(TerminalWrapPreferences.load(terminalWrapContext))
+    }
+    LaunchedEffect(wrapMode) {
+        TerminalWrapPreferences.save(terminalWrapContext, wrapMode)
+    }
     var terminalFontSize by remember { mutableStateOf(13.sp) }
     var command by remember { mutableStateOf("") }
     var showFavorites by remember { mutableStateOf(false) }

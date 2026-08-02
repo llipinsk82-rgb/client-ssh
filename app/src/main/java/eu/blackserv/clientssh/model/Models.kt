@@ -62,6 +62,6 @@ fun defaultFavoriteCommands(): List<FavoriteCommand> = listOf(
 )
 
 enum class TextWrapMode(val label: String) {
-    WRAP("Zawijaj"),
-    NO_WRAP("Bez zawijania"),
+    WRAP("AUTO ZAWIJANIE"),
+    NO_WRAP("BEZ ZAWIJANIA"),
 }
