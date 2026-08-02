@@ -1,1 +1,1 @@
-Export and verify the official Client SSH v0.3.7 OTA release asset.
+Export and verify the official Client SSH v0.3.7 OTA release asset — retry 2.
