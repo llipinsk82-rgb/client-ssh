@@ -7,5 +7,3 @@
 - Każdy endpoint wymaga jednego ponownego porównania fingerprintu.
 - Przy prawdziwej zmianie klucza użytkownik może usunąć wyłącznie stary wpis dla konkretnego hosta i portu; nowe połączenie nadal wymaga jawnego zaufania po weryfikacji.
 - Nie dodano trybu `StrictHostKeyChecking=no` ani automatycznego akceptowania zmienionych kluczy.
-
-Walidacja obejmuje ten sam hostname z kilkoma portami i różnymi kluczami ED25519.
