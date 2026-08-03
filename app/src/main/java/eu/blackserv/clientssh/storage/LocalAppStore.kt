@@ -182,7 +182,7 @@ class LocalAppStore(context: Context) {
         .put("command", command)
         .put("runImmediately", runImmediately)
 
-    private fun JSONObject.toFavoriteCommand(): FavoriteCommand = HostProfile(
+    private fun JSONObject.toFavoriteCommand(): FavoriteCommand = FavoriteCommand(
         id = optString("id").ifBlank { UUID.randomUUID().toString() },
         name = optString("name").trim(),
         command = optString("command"),
