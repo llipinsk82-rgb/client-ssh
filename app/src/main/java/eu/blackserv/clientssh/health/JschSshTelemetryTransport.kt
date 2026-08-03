@@ -200,7 +200,7 @@ class JschSshTelemetryTransport(context: Context) : SshTelemetryTransport {
             error.javaClass.simpleName.contains("algonego", ignoreCase = true) ||
                 raw.contains("algorithm negotiation")
         val kind = when {
-            algorithmNegotiationFailed -> SshTelemetryFailureKind.ALGORITHM_NEGOTIATION_FAILED
+            algorithmNegotiationFailed -> SshTelemetryFailureKind.INTERNAL_ERROR
 
             raw.contains("reject hostkey") ||
                 raw.contains("unknownhostkey") ||
