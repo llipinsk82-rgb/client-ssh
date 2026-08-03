@@ -21,6 +21,8 @@ import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.model.SshCompatibilityMode
 import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.model.defaultFavoriteCommands
+import eu.blackserv.clientssh.ssh.ensureLegacySshAlgorithmsAvailable
+import eu.blackserv.clientssh.ssh.requiresLegacySshCompatibility
 import java.security.KeyStore
 import java.util.UUID
 import javax.crypto.Cipher
@@ -66,8 +68,13 @@ class LocalAppStore(context: Context) {
         )
     }
 
-    fun loadProfiles(): List<HostProfile> =
-        loadProfilesFrom(KEY_PROFILES).ifEmpty { loadProfilesFrom(KEY_PROFILES_BACKUP) }
+    fun loadProfiles(): List<HostProfile> {
+        val profiles = loadProfilesFrom(KEY_PROFILES).ifEmpty { loadProfilesFrom(KEY_PROFILES_BACKUP) }
+        if (profiles.any { it.requiresLegacySshCompatibility() }) {
+            ensureLegacySshAlgorithmsAvailable()
+        }
+        return profiles
+    }
 
     private fun loadProfilesFrom(key: String): List<HostProfile> {
         val raw = prefs.getString(key, "[]").orEmpty()
@@ -81,6 +88,9 @@ class LocalAppStore(context: Context) {
     }
 
     fun saveProfiles(profiles: List<HostProfile>) {
+        if (profiles.any { it.requiresLegacySshCompatibility() }) {
+            ensureLegacySshAlgorithmsAvailable()
+        }
         val previousIds = loadProfiles().mapTo(mutableSetOf()) { it.id }
         val currentIds = profiles.mapTo(mutableSetOf()) { it.id }
         val array = JSONArray()
@@ -172,7 +182,7 @@ class LocalAppStore(context: Context) {
         .put("command", command)
         .put("runImmediately", runImmediately)
 
-    private fun JSONObject.toFavoriteCommand(): FavoriteCommand = FavoriteCommand(
+    private fun JSONObject.toFavoriteCommand(): FavoriteCommand = HostProfile(
         id = optString("id").ifBlank { UUID.randomUUID().toString() },
         name = optString("name").trim(),
         command = optString("command"),
