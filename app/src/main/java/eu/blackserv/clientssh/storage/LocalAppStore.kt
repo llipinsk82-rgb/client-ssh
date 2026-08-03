@@ -18,6 +18,7 @@ import eu.blackserv.clientssh.model.AuthenticationMethod
 import eu.blackserv.clientssh.model.ConnectionProtocol
 import eu.blackserv.clientssh.model.FavoriteCommand
 import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.model.SshCompatibilityMode
 import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.model.defaultFavoriteCommands
 import java.security.KeyStore
@@ -143,6 +144,7 @@ class LocalAppStore(context: Context) {
         .put("username", username.trim())
         .put("protocol", protocol.name)
         .put("authenticationMethod", authenticationMethod.name)
+        .put("sshCompatibilityMode", sshCompatibilityMode.name)
         .put("password", encryptOrBlank(password))
         .put("privateKey", encryptOrBlank(privateKey))
         .put("privateKeyPassphrase", encryptOrBlank(privateKeyPassphrase))
@@ -158,6 +160,10 @@ class LocalAppStore(context: Context) {
         password = decryptOrBlank(optString("password")),
         privateKey = decryptOrBlank(optString("privateKey")),
         privateKeyPassphrase = decryptOrBlank(optString("privateKeyPassphrase")),
+        sshCompatibilityMode = enumValueOrDefault(
+            optString("sshCompatibilityMode"),
+            SshCompatibilityMode.MODERN,
+        ),
     )
 
     private fun FavoriteCommand.toJson(): JSONObject = JSONObject()
