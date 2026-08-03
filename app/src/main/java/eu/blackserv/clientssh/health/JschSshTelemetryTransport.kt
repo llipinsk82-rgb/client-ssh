@@ -8,6 +8,7 @@ import com.jcraft.jsch.Session
 import eu.blackserv.clientssh.model.AuthenticationMethod
 import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.ssh.PortScopedHostKeyRepository
+import eu.blackserv.clientssh.ssh.applyProfileSshCompatibility
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
@@ -55,6 +56,7 @@ class JschSshTelemetryTransport(context: Context) : SshTelemetryTransport {
                 if (profile.authenticationMethod == AuthenticationMethod.PASSWORD) {
                     setPassword(profile.password)
                 }
+                applyProfileSshCompatibility(profile)
                 setConfig("StrictHostKeyChecking", "yes")
                 setConfig(
                     "PreferredAuthentications",
@@ -194,7 +196,12 @@ class JschSshTelemetryTransport(context: Context) : SshTelemetryTransport {
 
     private fun classifyJschFailure(error: JSchException): SshTelemetryTransportException {
         val raw = error.message.orEmpty().lowercase()
+        val algorithmNegotiationFailed =
+            error.javaClass.simpleName.contains("algonego", ignoreCase = true) ||
+                raw.contains("algorithm negotiation")
         val kind = when {
+            algorithmNegotiationFailed -> SshTelemetryFailureKind.INTERNAL_ERROR
+
             raw.contains("reject hostkey") ||
                 raw.contains("unknownhostkey") ||
                 raw.contains("host key has changed") -> SshTelemetryFailureKind.HOST_KEY_NOT_TRUSTED
