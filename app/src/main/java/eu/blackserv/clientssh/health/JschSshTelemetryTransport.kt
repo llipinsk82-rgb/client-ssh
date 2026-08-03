@@ -7,6 +7,7 @@ import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import eu.blackserv.clientssh.model.AuthenticationMethod
 import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.ssh.PortScopedHostKeyRepository
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
@@ -46,6 +47,11 @@ class JschSshTelemetryTransport(context: Context) : SshTelemetryTransport {
                 profile.host.trim(),
                 profile.port,
             ).apply {
+                hostKeyRepository = PortScopedHostKeyRepository(
+                    delegate = jsch.hostKeyRepository,
+                    displayHost = profile.host.trim(),
+                    port = profile.port,
+                )
                 if (profile.authenticationMethod == AuthenticationMethod.PASSWORD) {
                     setPassword(profile.password)
                 }

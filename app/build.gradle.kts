@@ -22,8 +22,8 @@ android {
         applicationId = "eu.blackserv.clientssh"
         minSdk = 26
         targetSdk = 36
-        versionCode = 50
-        versionName = "0.3.7"
+        versionCode = 51
+        versionName = "0.3.8"
     }
 
     signingConfigs {

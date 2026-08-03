@@ -5,6 +5,7 @@ import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import eu.blackserv.clientssh.model.AuthenticationMethod
 import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.ssh.PortScopedHostKeyRepository
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -59,6 +60,11 @@ class SftpClient(private val knownHostsFile: File) {
         }
 
         val newSession = newJsch.getSession(username, host, profile.port).apply {
+            hostKeyRepository = PortScopedHostKeyRepository(
+                delegate = newJsch.hostKeyRepository,
+                displayHost = host,
+                port = profile.port,
+            )
             if (profile.authenticationMethod == AuthenticationMethod.PASSWORD) {
                 setPassword(profile.password)
             }

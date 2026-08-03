@@ -21,6 +21,7 @@ class SshKnownHostsStoreTest {
         assertTrue(active.isFile)
         assertEquals(0L, active.length())
         assertTrue(directory.resolve(".explicit-host-key-verification-v1").isFile)
+        assertTrue(directory.resolve(".host-key-port-scope-v2").isFile)
     }
 
     @Test
@@ -60,6 +61,22 @@ class SshKnownHostsStoreTest {
 
         assertEquals("older\n", directory.resolve("known_hosts.accept-new-unverified").readText())
         assertEquals("newer\n", directory.resolve("known_hosts.accept-new-unverified.2").readText())
+    }
+
+    @Test
+    fun `upgrades v1 repository by archiving ambiguous host-only entries`() {
+        val directory = temporaryFolder.newFolder("ssh")
+        directory.resolve(".explicit-host-key-verification-v1").writeText("v1\n")
+        directory.resolve("known_hosts").writeText("blackserv.eu ssh-ed25519 AAAAOLD\n")
+
+        val prepared = SshKnownHostsStore.prepareDirectory(directory)
+
+        assertEquals(0L, prepared.length())
+        assertEquals(
+            "blackserv.eu ssh-ed25519 AAAAOLD\n",
+            directory.resolve("known_hosts.pre-port-scope-v2").readText(),
+        )
+        assertTrue(directory.resolve(".host-key-port-scope-v2").isFile)
     }
 
     @Test
