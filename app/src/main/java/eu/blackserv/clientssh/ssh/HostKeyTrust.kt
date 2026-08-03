@@ -16,6 +16,18 @@ enum class HostKeyTrustKind {
     CHANGED,
 }
 
+internal fun sshHostKeyAlias(host: String, port: Int): String {
+    require(port in 1..65_535) { "Port SSH poza zakresem" }
+    val trimmed = host.trim()
+    require(trimmed.isNotBlank()) { "Host SSH jest pusty" }
+    val normalized = if (trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.length > 2) {
+        trimmed.substring(1, trimmed.length - 1)
+    } else {
+        trimmed
+    }
+    return "[$normalized]:$port"
+}
+
 data class HostKeyTrustRequest(
     val id: Long,
     val host: String,
@@ -143,6 +155,32 @@ object HostKeyTrustBus : HostKeyTrustDecider {
     }
 }
 
+class PortScopedHostKeyRepository(
+    private val delegate: HostKeyRepository,
+    private val displayHost: String,
+    private val port: Int,
+) : HostKeyRepository {
+    private val endpointAlias: String
+        get() = sshHostKeyAlias(displayHost, port)
+
+    override fun check(repositoryHost: String, key: ByteArray): Int =
+        delegate.check(endpointAlias, key)
+
+    override fun add(hostkey: HostKey, userinfo: UserInfo?) = delegate.add(hostkey, userinfo)
+
+    override fun remove(host: String, type: String?) = delegate.remove(endpointAlias, type)
+
+    override fun remove(host: String, type: String?, key: ByteArray?) =
+        delegate.remove(endpointAlias, type, key)
+
+    override fun getKnownHostsRepositoryID(): String = delegate.knownHostsRepositoryID
+
+    override fun getHostKey(): Array<HostKey> = delegate.hostKey
+
+    override fun getHostKey(host: String?, type: String?): Array<HostKey> =
+        delegate.getHostKey(if (host == null) null else endpointAlias, type)
+}
+
 class InteractiveHostKeyRepository(
     private val delegate: HostKeyRepository,
     private val displayHost: String,
@@ -159,7 +197,8 @@ class InteractiveHostKeyRepository(
     private var pendingKey: PendingKey? = null
 
     override fun check(repositoryHost: String, key: ByteArray): Int {
-        val existing = delegate.check(repositoryHost, key)
+        val endpointHost = sshHostKeyAlias(displayHost, port)
+        val existing = delegate.check(endpointHost, key)
         if (existing == HostKeyRepository.OK) return existing
 
         val kind = if (existing == HostKeyRepository.CHANGED) {
@@ -191,7 +230,7 @@ class InteractiveHostKeyRepository(
             return HostKeyRepository.CHANGED
         }
 
-        val candidate = PendingKey(request.id, repositoryHost, key.copyOf())
+        val candidate = PendingKey(request.id, endpointHost, key.copyOf())
         synchronized(lock) {
             pendingKey?.key?.fill(0)
             pendingKey = candidate

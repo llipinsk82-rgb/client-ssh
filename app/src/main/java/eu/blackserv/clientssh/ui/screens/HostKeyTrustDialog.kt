@@ -16,18 +16,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +41,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import eu.blackserv.clientssh.ssh.HostKeyTrustKind
 import eu.blackserv.clientssh.ssh.HostKeyTrustRequest
+import eu.blackserv.clientssh.ssh.SshKnownHostsStore
 import eu.blackserv.clientssh.ui.theme.LocalPremiumSkin
 import eu.blackserv.clientssh.ui.theme.PremiumActionButton
 import eu.blackserv.clientssh.ui.theme.PremiumPanel
@@ -50,6 +55,8 @@ fun HostKeyTrustDialog(
     onReject: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val resetFailed = remember(request.id) { mutableStateOf(false) }
     val tokens = LocalPremiumSkin.current
     val changed = !canAcceptHostKey(request.kind)
     val stateColor = if (changed) tokens.danger else tokens.accentBright
@@ -177,6 +184,36 @@ fun HostKeyTrustDialog(
                             onClick = onTrust,
                             modifier = Modifier.fillMaxWidth(),
                         )
+                    }
+
+                    if (changed) {
+                        Text(
+                            "Jeśli potwierdziłeś nowy fingerprint niezależnym kanałem, usuń zapis wyłącznie dla tego hosta i portu. Przy następnym połączeniu aplikacja ponownie poprosi o jawne zaufanie.",
+                            color = tokens.muted,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                        PremiumActionButton(
+                            text = "USUŃ STARY KLUCZ DLA TEGO PORTU",
+                            icon = Icons.Default.DeleteForever,
+                            onClick = {
+                                val removed = SshKnownHostsStore.forget(
+                                    context.applicationContext,
+                                    request.host,
+                                    request.port,
+                                )
+                                resetFailed.value = !removed
+                                if (removed) onReject()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            secondary = true,
+                        )
+                        if (resetFailed.value) {
+                            Text(
+                                "Nie udało się usunąć starego wpisu. Zamknij aplikację i spróbuj ponownie.",
+                                color = tokens.danger,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
                     }
 
                     PremiumActionButton(
