@@ -13,12 +13,19 @@ internal fun Throwable.isRetryableSshError(): Boolean {
         "host jest pusty",
         "użytkownik ssh jest pusty",
         "klucz prywatny jest pusty",
-    ).none(raw::contains)
+        "algorithm negotiation",
+    ).none(raw::contains) && !javaClass.simpleName.contains("AlgoNego", ignoreCase = true)
 }
 
 internal fun Throwable.toSafeSshMessage(host: String): String {
     val raw = message?.trim().orEmpty()
+    val algorithmNegotiationFailed =
+        javaClass.simpleName.contains("AlgoNego", ignoreCase = true) ||
+            raw.contains("algorithm negotiation", ignoreCase = true)
     return when {
+        algorithmNegotiationFailed ->
+            "Serwer używa starszych algorytmów SSH. Edytuj profil i włącz „Stary tuner / Enigma2”."
+
         raw.contains("Auth fail", ignoreCase = true) ||
             raw.contains("authentication", ignoreCase = true) ->
             "Nieprawidłowy login, hasło lub klucz SSH."
