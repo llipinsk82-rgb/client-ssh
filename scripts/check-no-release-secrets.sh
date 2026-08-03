@@ -49,26 +49,41 @@ for ssh_file in "${ssh_session_files[@]}"; do
     fail=1
   fi
 
-  if ! grep -Fq 'setKnownHosts(' "$ssh_file" && ! grep -Fq 'hostKeyRepository =' "$ssh_file"; then
-    echo "ERROR: sesja SSH nie wskazuje magazynu known_hosts: $ssh_file" >&2
+  if ! grep -Fq 'setKnownHosts(' "$ssh_file"; then
+    echo "ERROR: sesja SSH nie wskazuje trwałego magazynu known_hosts: $ssh_file" >&2
     fail=1
   fi
 
   if grep -Fq 'setConfig("StrictHostKeyChecking", "yes")' "$ssh_file"; then
-    continue
+    :
+  elif grep -Eq 'const val [A-Za-z0-9_]*STRICT_HOST_KEY_CHECKING[[:space:]]*=[[:space:]]*"yes"' "$ssh_file"; then
+    :
+  else
+    echo "ERROR: sesja SSH nie wymusza StrictHostKeyChecking=yes: $ssh_file" >&2
+    fail=1
   fi
-
-  if grep -Eq 'const val [A-Za-z0-9_]*STRICT_HOST_KEY_CHECKING[[:space:]]*=[[:space:]]*"yes"' "$ssh_file"; then
-    continue
-  fi
-
-  echo "ERROR: sesja SSH nie wymusza StrictHostKeyChecking=yes: $ssh_file" >&2
-  fail=1
 done
+
+host_trust_file="app/src/main/java/eu/blackserv/clientssh/ssh/HostKeyTrust.kt"
+sftp_file="app/src/main/java/eu/blackserv/clientssh/sftp/SftpClient.kt"
+telemetry_file="app/src/main/java/eu/blackserv/clientssh/health/JschSshTelemetryTransport.kt"
+
+if ! grep -Fq 'sshHostKeyAlias(displayHost, port)' "$host_trust_file"; then
+  echo "ERROR: terminal nie rozdziela kluczy hosta według host:port." >&2
+  fail=1
+fi
+if ! grep -Fq 'PortScopedHostKeyRepository' "$sftp_file"; then
+  echo "ERROR: SFTP nie rozdziela kluczy hosta według host:port." >&2
+  fail=1
+fi
+if ! grep -Fq 'PortScopedHostKeyRepository' "$telemetry_file"; then
+  echo "ERROR: telemetria nie rozdziela kluczy hosta według host:port." >&2
+  fail=1
+fi
 
 if ((fail != 0)); then
   echo "Przenieś materiał podpisujący do GitHub Actions Secrets i nie omijaj jawnej weryfikacji host key." >&2
   exit 1
 fi
 
-echo "OK: brak śledzonych kluczy/keystore, jawnych haseł podpisu; każda sesja SSH używa known_hosts i StrictHostKeyChecking=yes."
+echo "OK: brak śledzonych kluczy/keystore; wszystkie sesje używają known_hosts, StrictHostKeyChecking=yes oraz tożsamości host:port."
