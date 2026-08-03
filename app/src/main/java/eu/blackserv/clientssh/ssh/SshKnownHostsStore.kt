@@ -49,8 +49,7 @@ object SshKnownHostsStore {
         if (!marker.isFile) {
             archiveIfNotEmpty(directory, active, LEGACY_BACKUP_FILE_NAME)
             truncateAndSecure(active)
-            writeMarker(directory, marker, "v1
-")
+            writeMarker(directory, marker, "v1\n")
         } else if (!active.exists()) {
             check(active.createNewFile()) { "Nie można utworzyć aktywnego known_hosts" }
             securePrivateFile(active)
@@ -59,8 +58,7 @@ object SshKnownHostsStore {
         if (!portScopeMarker.isFile) {
             archiveIfNotEmpty(directory, active, PORT_SCOPE_BACKUP_FILE_NAME)
             truncateAndSecure(active)
-            writeMarker(directory, portScopeMarker, "v2
-")
+            writeMarker(directory, portScopeMarker, "v2\n")
         }
 
         check(active.isFile) { "Aktywny known_hosts nie jest plikiem" }
