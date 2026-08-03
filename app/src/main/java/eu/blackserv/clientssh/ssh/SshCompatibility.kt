@@ -1,17 +1,35 @@
 package eu.blackserv.clientssh.ssh
 
+import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.model.SshCompatibilityMode
 
 /**
- * Enables deprecated SSH algorithms only for profiles that explicitly opt into
- * compatibility with old Enigma2/Dropbear devices. Modern profiles retain the
- * secure defaults provided by mwiede/jsch.
+ * Deprecated algorithms are activated only after the user explicitly enables
+ * the legacy Enigma2/Dropbear mode in at least one profile. Secure algorithms
+ * remain first in the global proposal, while the selected profile also gets an
+ * explicit per-session policy with legacy RSA first for old Dropbear auth.
  */
+internal fun ensureLegacySshAlgorithmsAvailable() {
+    if (legacyAlgorithmsBootstrapped) return
+    synchronized(legacyBootstrapLock) {
+        if (legacyAlgorithmsBootstrapped) return
+        appendGlobalAlgorithms("server_host_key", LEGACY_HOST_KEY_ALGORITHMS)
+        appendGlobalAlgorithms("PubkeyAcceptedAlgorithms", LEGACY_PUBLIC_KEY_ALGORITHMS)
+        appendGlobalAlgorithms("kex", LEGACY_KEX_ALGORITHMS)
+        appendGlobalAlgorithms("cipher.c2s", LEGACY_CIPHERS)
+        appendGlobalAlgorithms("cipher.s2c", LEGACY_CIPHERS)
+        appendGlobalAlgorithms("mac.c2s", LEGACY_MACS)
+        appendGlobalAlgorithms("mac.s2c", LEGACY_MACS)
+        legacyAlgorithmsBootstrapped = true
+    }
+}
+
 internal fun Session.applyProfileSshCompatibility(profile: HostProfile) {
     if (profile.sshCompatibilityMode != SshCompatibilityMode.LEGACY_ENIGMA2) return
 
+    ensureLegacySshAlgorithmsAvailable()
     prependAlgorithms("server_host_key", LEGACY_HOST_KEY_ALGORITHMS)
     prependAlgorithms("PubkeyAcceptedAlgorithms", LEGACY_PUBLIC_KEY_ALGORITHMS)
     appendAlgorithms("kex", LEGACY_KEX_ALGORITHMS)
@@ -21,8 +39,8 @@ internal fun Session.applyProfileSshCompatibility(profile: HostProfile) {
     appendAlgorithms("mac.s2c", LEGACY_MACS)
 }
 
-internal fun Session.usesLegacySshCompatibility(profile: HostProfile): Boolean =
-    profile.sshCompatibilityMode == SshCompatibilityMode.LEGACY_ENIGMA2
+internal fun HostProfile.requiresLegacySshCompatibility(): Boolean =
+    sshCompatibilityMode == SshCompatibilityMode.LEGACY_ENIGMA2
 
 private fun Session.prependAlgorithms(key: String, legacy: List<String>) {
     val current = getConfig(key).orEmpty().splitAlgorithms()
@@ -34,8 +52,17 @@ private fun Session.appendAlgorithms(key: String, legacy: List<String>) {
     setConfig(key, (current + legacy).distinct().joinToString(","))
 }
 
+private fun appendGlobalAlgorithms(key: String, legacy: List<String>) {
+    val current = JSch.getConfig(key).orEmpty().splitAlgorithms()
+    JSch.setConfig(key, (current + legacy).distinct().joinToString(","))
+}
+
 private fun String.splitAlgorithms(): List<String> =
     split(',').map(String::trim).filter(String::isNotBlank)
+
+@Volatile
+private var legacyAlgorithmsBootstrapped = false
+private val legacyBootstrapLock = Any()
 
 internal val LEGACY_HOST_KEY_ALGORITHMS = listOf(
     "ssh-rsa",
