@@ -5,7 +5,9 @@ import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import eu.blackserv.clientssh.model.AuthenticationMethod
 import eu.blackserv.clientssh.model.HostProfile
+import eu.blackserv.clientssh.model.SshCompatibilityMode
 import eu.blackserv.clientssh.ssh.PortScopedHostKeyRepository
+import eu.blackserv.clientssh.ssh.applyProfileSshCompatibility
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -68,6 +70,7 @@ class SftpClient(private val knownHostsFile: File) {
             if (profile.authenticationMethod == AuthenticationMethod.PASSWORD) {
                 setPassword(profile.password)
             }
+            applyProfileSshCompatibility(profile)
             setConfig("StrictHostKeyChecking", SFTP_STRICT_HOST_KEY_CHECKING)
             setConfig(
                 "PreferredAuthentications",
@@ -179,7 +182,7 @@ class SftpClient(private val knownHostsFile: File) {
     }
 
     fun readableError(error: Throwable, profile: HostProfile): String =
-        safeSftpErrorMessage(error, profile.host.trim())
+        safeSftpErrorMessage(error, profile)
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 15_000
@@ -190,9 +193,18 @@ class SftpClient(private val knownHostsFile: File) {
     }
 }
 
-internal fun safeSftpErrorMessage(error: Throwable, host: String): String {
+internal fun safeSftpErrorMessage(error: Throwable, profile: HostProfile): String {
     val raw = error.message?.trim().orEmpty()
+    val algorithmNegotiationFailed =
+        error.javaClass.simpleName.contains("AlgoNego", ignoreCase = true) ||
+            raw.contains("algorithm negotiation", ignoreCase = true)
     return when {
+        algorithmNegotiationFailed && profile.sshCompatibilityMode != SshCompatibilityMode.LEGACY_ENIGMA2 ->
+            "Serwer używa starych algorytmów SSH. W edycji profilu włącz „Stary tuner / Enigma2”."
+
+        algorithmNegotiationFailed ->
+            "Stary serwer nadal nie znalazł wspólnego algorytmu SFTP. Sprawdź wersję Dropbear i obsługiwane algorytmy."
+
         raw.contains("host key has changed", ignoreCase = true) ||
             raw.contains("hostkey has been changed", ignoreCase = true) ->
             "Klucz hosta SSH zmienił się. Połączenie SFTP zostało zablokowane."
@@ -206,7 +218,7 @@ internal fun safeSftpErrorMessage(error: Throwable, host: String): String {
 
         raw.contains("UnknownHostException", ignoreCase = true) ||
             raw.contains("Unable to resolve host", ignoreCase = true) ->
-            "Nie można znaleźć hosta: $host. Sprawdź internet, DNS albo literówkę w profilu."
+            "Nie można znaleźć hosta: ${profile.host.trim()}. Sprawdź internet, DNS albo literówkę w profilu."
 
         raw.contains("Permission denied", ignoreCase = true) ->
             "Brak uprawnień do tej operacji SFTP."
