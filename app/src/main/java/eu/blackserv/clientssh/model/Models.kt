@@ -13,6 +13,20 @@ enum class AuthenticationMethod(val label: String) {
     INTERACTIVE("Ręcznie"),
 }
 
+enum class SshCompatibilityMode(
+    val label: String,
+    val description: String,
+) {
+    MODERN(
+        label = "Nowoczesny SSH",
+        description = "Bezpieczne algorytmy dla aktualnych serwerów OpenSSH i Dropbear.",
+    ),
+    LEGACY_ENIGMA2(
+        label = "Stary tuner / Enigma2",
+        description = "Włącza starsze algorytmy wyłącznie dla tego profilu i starego Dropbear.",
+    ),
+}
+
 enum class AppSkin(
     val label: String,
     val description: String,
@@ -73,6 +87,7 @@ data class HostProfile(
     val password: String = "",
     val privateKey: String = "",
     val privateKeyPassphrase: String = "",
+    val sshCompatibilityMode: SshCompatibilityMode = SshCompatibilityMode.MODERN,
 )
 
 data class FavoriteCommand(
