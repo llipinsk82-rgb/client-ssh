@@ -18,12 +18,12 @@ enum class SshCompatibilityMode(
     val description: String,
 ) {
     MODERN(
-        label = "Nowoczesny SSH",
-        description = "Bezpieczne algorytmy dla aktualnych serwerów OpenSSH i Dropbear.",
+        label = "Tylko nowoczesne SSH",
+        description = "Wymusza wyłącznie aktualne algorytmy SSH.",
     ),
     LEGACY_ENIGMA2(
-        label = "Stary tuner / Enigma2",
-        description = "Włącza starsze algorytmy wyłącznie dla tego profilu i starego Dropbear.",
+        label = "Automatyczna zgodność",
+        description = "Najpierw używa nowoczesnych algorytmów, a zgodność rozszerzoną dobiera tylko wtedy, gdy serwer jej wymaga.",
     ),
 }
 
@@ -87,7 +87,7 @@ data class HostProfile(
     val password: String = "",
     val privateKey: String = "",
     val privateKeyPassphrase: String = "",
-    val sshCompatibilityMode: SshCompatibilityMode = SshCompatibilityMode.MODERN,
+    val sshCompatibilityMode: SshCompatibilityMode = SshCompatibilityMode.LEGACY_ENIGMA2,
 )
 
 data class FavoriteCommand(
