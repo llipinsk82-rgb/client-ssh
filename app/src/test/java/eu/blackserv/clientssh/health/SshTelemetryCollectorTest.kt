@@ -33,6 +33,20 @@ class SshTelemetryCollectorTest {
     }
 
     @Test
+    fun `telemetry command is safe for old BusyBox and old procfs`() {
+        val command = buildSshTelemetryCommand(TelemetryPingTarget.DEFAULT)
+
+        assertFalse(command.contains("set -eu"))
+        assertFalse(command.contains("set -e"))
+        assertTrue(command.contains("/^MemAvailable:/"))
+        assertTrue(command.contains("free_mem + buffers + cached + reclaimable - shmem"))
+        assertTrue(command.contains("df -Pk /"))
+        assertTrue(command.contains("df -k /"))
+        assertTrue(command.contains("\${steal:-0}"))
+        assertTrue(command.contains("exit 0"))
+    }
+
+    @Test
     fun `interactive profile is rejected without calling transport`() {
         var calls = 0
         val collector = SshTelemetryCollector(
