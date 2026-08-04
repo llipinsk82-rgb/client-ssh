@@ -24,7 +24,7 @@ internal fun Throwable.toSafeSshMessage(host: String): String {
             raw.contains("algorithm negotiation", ignoreCase = true)
     return when {
         algorithmNegotiationFailed ->
-            "Serwer używa starszych algorytmów SSH. Edytuj profil i włącz „Stary tuner / Enigma2”."
+            "Nie udało się uzgodnić algorytmów SSH z tym serwerem. Automatyczna zgodność nie znalazła wspólnego zestawu."
 
         raw.contains("Auth fail", ignoreCase = true) ||
             raw.contains("authentication", ignoreCase = true) ->
