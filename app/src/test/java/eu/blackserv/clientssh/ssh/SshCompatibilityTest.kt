@@ -12,12 +12,17 @@ import org.junit.Test
 
 class SshCompatibilityTest {
     @Test
-    fun `legacy mode enables old Dropbear algorithms on selected session`() {
+    fun `automatic compatibility keeps modern algorithms first and adds fallbacks`() {
         val session = JSch().getSession("root", "receiver.local", 22)
+        val modernHostKeyFirst = session.getConfig("server_host_key").split(',').first()
+        val modernPublicKeyFirst = session.getConfig("PubkeyAcceptedAlgorithms").split(',').first()
+
         session.applyProfileSshCompatibility(profile(SshCompatibilityMode.LEGACY_ENIGMA2))
 
-        assertEquals("ssh-rsa", session.getConfig("server_host_key").split(',').first())
-        assertEquals("ssh-rsa", session.getConfig("PubkeyAcceptedAlgorithms").split(',').first())
+        assertEquals(modernHostKeyFirst, session.getConfig("server_host_key").split(',').first())
+        assertEquals(modernPublicKeyFirst, session.getConfig("PubkeyAcceptedAlgorithms").split(',').first())
+        assertContains(session.getConfig("server_host_key"), "ssh-rsa")
+        assertContains(session.getConfig("PubkeyAcceptedAlgorithms"), "ssh-rsa")
         assertContains(session.getConfig("kex"), "diffie-hellman-group1-sha1")
         assertContains(session.getConfig("cipher.c2s"), "3des-cbc")
         assertContains(session.getConfig("cipher.s2c"), "aes128-cbc")
@@ -26,7 +31,7 @@ class SshCompatibilityTest {
     }
 
     @Test
-    fun `modern profile does not prepend legacy host key algorithms per session`() {
+    fun `modern-only profile does not add compatibility algorithms per session`() {
         val session = JSch().getSession("root", "server.local", 22)
         val before = session.getConfig("server_host_key")
 
@@ -42,7 +47,7 @@ class SshCompatibilityTest {
     }
 
     private fun profile(mode: SshCompatibilityMode) = HostProfile(
-        name = "Vu+ Zero",
+        name = "Receiver",
         host = "receiver.local",
         port = 22,
         username = "root",

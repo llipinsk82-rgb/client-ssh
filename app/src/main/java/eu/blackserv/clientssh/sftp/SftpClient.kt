@@ -5,7 +5,6 @@ import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import eu.blackserv.clientssh.model.AuthenticationMethod
 import eu.blackserv.clientssh.model.HostProfile
-import eu.blackserv.clientssh.model.SshCompatibilityMode
 import eu.blackserv.clientssh.ssh.PortScopedHostKeyRepository
 import eu.blackserv.clientssh.ssh.applyProfileSshCompatibility
 import java.io.File
@@ -199,11 +198,8 @@ internal fun safeSftpErrorMessage(error: Throwable, profile: HostProfile): Strin
         error.javaClass.simpleName.contains("AlgoNego", ignoreCase = true) ||
             raw.contains("algorithm negotiation", ignoreCase = true)
     return when {
-        algorithmNegotiationFailed && profile.sshCompatibilityMode != SshCompatibilityMode.LEGACY_ENIGMA2 ->
-            "Serwer używa starych algorytmów SSH. W edycji profilu włącz „Stary tuner / Enigma2”."
-
         algorithmNegotiationFailed ->
-            "Stary serwer nadal nie znalazł wspólnego algorytmu SFTP. Sprawdź wersję Dropbear i obsługiwane algorytmy."
+            "Nie udało się uzgodnić algorytmów SFTP z tym serwerem. Automatyczna zgodność nie znalazła wspólnego zestawu."
 
         raw.contains("host key has changed", ignoreCase = true) ||
             raw.contains("hostkey has been changed", ignoreCase = true) ->

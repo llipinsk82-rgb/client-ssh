@@ -22,7 +22,6 @@ import eu.blackserv.clientssh.model.SshCompatibilityMode
 import eu.blackserv.clientssh.model.TerminalSettings
 import eu.blackserv.clientssh.model.defaultFavoriteCommands
 import eu.blackserv.clientssh.ssh.ensureLegacySshAlgorithmsAvailable
-import eu.blackserv.clientssh.ssh.requiresLegacySshCompatibility
 import java.security.KeyStore
 import java.util.UUID
 import javax.crypto.Cipher
@@ -69,8 +68,16 @@ class LocalAppStore(context: Context) {
     }
 
     fun loadProfiles(): List<HostProfile> {
-        val profiles = loadProfilesFrom(KEY_PROFILES).ifEmpty { loadProfilesFrom(KEY_PROFILES_BACKUP) }
-        if (profiles.any { it.requiresLegacySshCompatibility() }) {
+        val profiles = loadProfilesFrom(KEY_PROFILES)
+            .ifEmpty { loadProfilesFrom(KEY_PROFILES_BACKUP) }
+            .map { profile ->
+                if (profile.protocol == ConnectionProtocol.SSH) {
+                    profile.copy(sshCompatibilityMode = SshCompatibilityMode.LEGACY_ENIGMA2)
+                } else {
+                    profile
+                }
+            }
+        if (profiles.any { it.protocol == ConnectionProtocol.SSH }) {
             ensureLegacySshAlgorithmsAvailable()
         }
         return profiles
@@ -88,13 +95,20 @@ class LocalAppStore(context: Context) {
     }
 
     fun saveProfiles(profiles: List<HostProfile>) {
-        if (profiles.any { it.requiresLegacySshCompatibility() }) {
+        val normalizedProfiles = profiles.map { profile ->
+            if (profile.protocol == ConnectionProtocol.SSH) {
+                profile.copy(sshCompatibilityMode = SshCompatibilityMode.LEGACY_ENIGMA2)
+            } else {
+                profile
+            }
+        }
+        if (normalizedProfiles.any { it.protocol == ConnectionProtocol.SSH }) {
             ensureLegacySshAlgorithmsAvailable()
         }
         val previousIds = loadProfiles().mapTo(mutableSetOf()) { it.id }
-        val currentIds = profiles.mapTo(mutableSetOf()) { it.id }
+        val currentIds = normalizedProfiles.mapTo(mutableSetOf()) { it.id }
         val array = JSONArray()
-        profiles.forEach { profile -> array.put(profile.toJson()) }
+        normalizedProfiles.forEach { profile -> array.put(profile.toJson()) }
         val raw = array.toString()
         check(prefs.edit().putString(KEY_PROFILES, raw).putString(KEY_PROFILES_BACKUP, raw).commit()) {
             "Nie udało się zapisać profili"
@@ -172,7 +186,7 @@ class LocalAppStore(context: Context) {
         privateKeyPassphrase = decryptOrBlank(optString("privateKeyPassphrase")),
         sshCompatibilityMode = enumValueOrDefault(
             optString("sshCompatibilityMode"),
-            SshCompatibilityMode.MODERN,
+            SshCompatibilityMode.LEGACY_ENIGMA2,
         ),
     )
 
