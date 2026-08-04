@@ -6,10 +6,9 @@ import eu.blackserv.clientssh.model.HostProfile
 import eu.blackserv.clientssh.model.SshCompatibilityMode
 
 /**
- * Deprecated algorithms are activated only after the user explicitly enables
- * the legacy Enigma2/Dropbear mode in at least one profile. Secure algorithms
- * remain first in the global proposal, while the selected profile also gets an
- * explicit per-session policy with legacy RSA first for old Dropbear auth.
+ * Automatic compatibility keeps modern algorithms first and appends older
+ * fallbacks only for profiles using automatic negotiation. Host-key checking
+ * remains strict and independent from the negotiated algorithm set.
  */
 internal fun ensureLegacySshAlgorithmsAvailable() {
     if (legacyAlgorithmsBootstrapped) return
@@ -30,8 +29,8 @@ internal fun Session.applyProfileSshCompatibility(profile: HostProfile) {
     if (profile.sshCompatibilityMode != SshCompatibilityMode.LEGACY_ENIGMA2) return
 
     ensureLegacySshAlgorithmsAvailable()
-    prependAlgorithms("server_host_key", LEGACY_HOST_KEY_ALGORITHMS)
-    prependAlgorithms("PubkeyAcceptedAlgorithms", LEGACY_PUBLIC_KEY_ALGORITHMS)
+    appendAlgorithms("server_host_key", LEGACY_HOST_KEY_ALGORITHMS)
+    appendAlgorithms("PubkeyAcceptedAlgorithms", LEGACY_PUBLIC_KEY_ALGORITHMS)
     appendAlgorithms("kex", LEGACY_KEX_ALGORITHMS)
     appendAlgorithms("cipher.c2s", LEGACY_CIPHERS)
     appendAlgorithms("cipher.s2c", LEGACY_CIPHERS)
@@ -41,11 +40,6 @@ internal fun Session.applyProfileSshCompatibility(profile: HostProfile) {
 
 internal fun HostProfile.requiresLegacySshCompatibility(): Boolean =
     sshCompatibilityMode == SshCompatibilityMode.LEGACY_ENIGMA2
-
-private fun Session.prependAlgorithms(key: String, legacy: List<String>) {
-    val current = getConfig(key).orEmpty().splitAlgorithms()
-    setConfig(key, (legacy + current).distinct().joinToString(","))
-}
 
 private fun Session.appendAlgorithms(key: String, legacy: List<String>) {
     val current = getConfig(key).orEmpty().splitAlgorithms()
