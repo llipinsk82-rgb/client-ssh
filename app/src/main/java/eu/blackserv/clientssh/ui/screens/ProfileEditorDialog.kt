@@ -59,9 +59,6 @@ fun ProfileEditorDialog(
     var authentication by remember(existing?.id) {
         mutableStateOf(existing?.authenticationMethod ?: AuthenticationMethod.PASSWORD)
     }
-    var compatibilityMode by remember(existing?.id) {
-        mutableStateOf(existing?.sshCompatibilityMode ?: SshCompatibilityMode.MODERN)
-    }
     var password by remember(existing?.id) { mutableStateOf(existing?.password.orEmpty()) }
     var privateKey by remember(existing?.id) { mutableStateOf(existing?.privateKey.orEmpty()) }
     var privateKeyPassphrase by remember(existing?.id) { mutableStateOf(existing?.privateKeyPassphrase.orEmpty()) }
@@ -128,11 +125,7 @@ fun ProfileEditorDialog(
             password = if (authentication == AuthenticationMethod.PASSWORD) password else "",
             privateKey = normalizedKey,
             privateKeyPassphrase = if (authentication == AuthenticationMethod.PRIVATE_KEY) privateKeyPassphrase else "",
-            sshCompatibilityMode = if (protocol == ConnectionProtocol.SSH) {
-                compatibilityMode
-            } else {
-                SshCompatibilityMode.MODERN
-            },
+            sshCompatibilityMode = SshCompatibilityMode.LEGACY_ENIGMA2,
         )
     }
 
@@ -152,11 +145,8 @@ fun ProfileEditorDialog(
                                 val oldDefault = protocol.defaultPort.toString()
                                 protocol = option
                                 if (port.isBlank() || port == oldDefault) port = option.defaultPort.toString()
-                                if (option == ConnectionProtocol.TELNET) {
-                                    compatibilityMode = SshCompatibilityMode.MODERN
-                                    if (authentication == AuthenticationMethod.PRIVATE_KEY) {
-                                        authentication = AuthenticationMethod.PASSWORD
-                                    }
+                                if (option == ConnectionProtocol.TELNET && authentication == AuthenticationMethod.PRIVATE_KEY) {
+                                    authentication = AuthenticationMethod.PASSWORD
                                 }
                             },
                             label = { Text(option.label) },
@@ -179,31 +169,12 @@ fun ProfileEditorDialog(
                 }
 
                 if (protocol == ConnectionProtocol.SSH) {
-                    Text("Zgodność serwera SSH")
-                    SshCompatibilityMode.entries.forEach { option ->
-                        FilterChip(
-                            selected = compatibilityMode == option,
-                            onClick = { compatibilityMode = option },
-                            label = { Text(option.label) },
-                            modifier = Modifier.padding(end = 6.dp),
-                        )
-                    }
+                    Text("Zgodność SSH")
                     Text(
-                        compatibilityMode.description,
+                        "Dobierana automatycznie. Aplikacja preferuje nowoczesne zabezpieczenia i rozszerza zgodność tylko wtedy, gdy wymaga tego serwer.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (compatibilityMode == SshCompatibilityMode.LEGACY_ENIGMA2) {
-                            MaterialTheme.colorScheme.tertiary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (compatibilityMode == SshCompatibilityMode.LEGACY_ENIGMA2) {
-                        Text(
-                            "Używaj wyłącznie dla starego Dropbear. Tryb włącza przestarzałe algorytmy tylko w tym profilu. Przy logowaniu kluczem stary tuner zwykle wymaga klucza RSA, a nie Ed25519.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.tertiary,
-                        )
-                    }
                 }
 
                 Text("Logowanie")
