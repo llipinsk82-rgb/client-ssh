@@ -12,6 +12,7 @@ class HealthCheckWorker(
     override suspend fun doWork(): Result {
         val profileId = inputData.getString(KEY_PROFILE_ID)?.takeIf { it.isNotBlank() }
             ?: return Result.failure()
+        val manualBackgroundTest = inputData.getBoolean(KEY_MANUAL_BACKGROUND_TEST, false)
         val diagnostics = HealthCheckDiagnosticsRepository(
             SharedPreferencesHealthCheckStorage(
                 context = applicationContext,
@@ -78,17 +79,43 @@ class HealthCheckWorker(
                 config = config,
             )
 
+            val notifier = HealthStatusNotifier(applicationContext)
             if (run.transition.notifyStatusChange) {
-                HealthStatusNotifier(applicationContext).notifyStatusChange(
+                notifier.notifyStatusChange(
                     profileId = profileId,
                     displayName = profile.name.ifBlank { profile.host },
                     snapshot = run.transition.snapshot,
                 )
             }
 
+            val testNotificationShown = if (manualBackgroundTest) {
+                notifier.notifyBackgroundSelfTest(
+                    profileId = profileId,
+                    displayName = profile.name.ifBlank { profile.host },
+                    snapshot = run.transition.snapshot,
+                )
+            } else {
+                null
+            }
+            val diagnosticDetail = if (manualBackgroundTest) {
+                buildString {
+                    append(run.diagnosticLabel())
+                    append(" • test tła: ")
+                    append(
+                        if (testNotificationShown == true) {
+                            "powiadomienie wysłane"
+                        } else {
+                            "powiadomienie zablokowane"
+                        },
+                    )
+                }
+            } else {
+                run.diagnosticLabel()
+            }
+
             finish(
                 outcome = HealthCheckRunOutcome.SUCCESS,
-                detail = run.diagnosticLabel(),
+                detail = diagnosticDetail,
                 result = Result.success(),
             )
         }.getOrElse { error ->
@@ -103,6 +130,7 @@ class HealthCheckWorker(
 
     companion object {
         const val KEY_PROFILE_ID = "profile_id"
+        const val KEY_MANUAL_BACKGROUND_TEST = "manual_background_test"
         internal const val MAX_RETRY_ATTEMPTS = 3
     }
 }
