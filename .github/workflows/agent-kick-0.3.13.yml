@@ -1,0 +1,43 @@
+name: Kick Client SSH 0.3.13
+
+on:
+  push:
+    branches:
+      - agent/0.3.13-background-monitor-self-test
+    paths:
+      - .github/workflows/agent-kick-0.3.13.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/0.3.13-background-monitor-self-test
+
+      - name: Execute embedded patch
+        shell: bash
+        run: |
+          python3 - <<'RUNNER'
+          from pathlib import Path
+          from textwrap import dedent
+
+          source = Path('.github/workflows/agent-apply-0.3.13.yml').read_text()
+          marker = "          python3 - <<'PY'\n"
+          end_marker = "\n          PY"
+          body = source.split(marker, 1)[1].split(end_marker, 1)[0]
+          exec(compile(dedent(body), 'apply-0.3.13.py', 'exec'))
+          RUNNER
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Client SSH automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app docs/NEXT_CHAT_HANDOFF.md
+          git commit -m "Add delayed background monitor self-test for 0.3.13"
+          git push origin HEAD:agent/0.3.13-background-monitor-self-test
