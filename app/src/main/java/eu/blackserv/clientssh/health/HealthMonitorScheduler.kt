@@ -48,14 +48,16 @@ class HealthMonitorScheduler(
     }
 
     /**
-     * Runs the same worker used by periodic monitoring as a one-time diagnostic job.
-     * The periodic schedule is not replaced or delayed.
+     * Schedules the same worker used by periodic monitoring with a deliberate delay.
+     * The delay gives the user time to close the app or restart the phone and proves
+     * that WorkManager and notifications work independently from the foreground UI.
      */
     override fun runNow(profileId: String) {
         require(profileId.isNotBlank()) { "profileId must not be blank" }
         val request = OneTimeWorkRequestBuilder<HealthCheckWorker>()
+            .setInitialDelay(BACKGROUND_SELF_TEST_DELAY_SECONDS, TimeUnit.SECONDS)
             .setConstraints(networkConstraints())
-            .setInputData(profileInput(profileId))
+            .setInputData(profileInput(profileId, manualBackgroundTest = true))
             .addTag(TAG_ALL_HEALTH_CHECKS)
             .addTag(profileTag(profileId))
             .addTag(TAG_MANUAL_BACKGROUND_TEST)
@@ -84,13 +86,18 @@ class HealthMonitorScheduler(
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
 
-    private fun profileInput(profileId: String): Data = Data.Builder()
+    private fun profileInput(
+        profileId: String,
+        manualBackgroundTest: Boolean = false,
+    ): Data = Data.Builder()
         .putString(HealthCheckWorker.KEY_PROFILE_ID, profileId)
+        .putBoolean(HealthCheckWorker.KEY_MANUAL_BACKGROUND_TEST, manualBackgroundTest)
         .build()
 
     companion object {
         const val TAG_ALL_HEALTH_CHECKS = "health-check-monitor"
         const val TAG_MANUAL_BACKGROUND_TEST = "health-check-manual-background-test"
+        internal const val BACKGROUND_SELF_TEST_DELAY_SECONDS = 90L
 
         internal fun uniqueWorkName(profileId: String): String =
             "health-check-${stableId(profileId)}"
