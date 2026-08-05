@@ -34,7 +34,7 @@ class ConfigurationBackupTest {
         val raw = encrypted.toString(Charsets.ISO_8859_1)
 
         assertFalse(raw.contains("super-secret-password"))
-        assertFalse(raw.contains("BEGIN OPENSSH PRIVATE KEY"))
+        assertFalse(raw.contains("TEST-KEY-MATERIAL-v1"))
         assertFalse(raw.contains("blackserv.eu"))
         assertFalse(raw.contains("debian"))
     }
@@ -119,7 +119,7 @@ class ConfigurationBackupTest {
             protocol = ConnectionProtocol.SSH,
             authenticationMethod = AuthenticationMethod.PRIVATE_KEY,
             password = "super-secret-password",
-            privateKey = "-----BEGIN OPENSSH PRIVATE KEY-----\nsecret-material\n-----END OPENSSH PRIVATE KEY-----",
+            privateKey = "TEST-KEY-MATERIAL-v1\nsecret-material\nEND-TEST-KEY",
             privateKeyPassphrase = "private-key-passphrase",
         )
         return ConfigurationBackupSnapshot(
